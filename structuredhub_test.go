@@ -99,6 +99,29 @@ func (*StructuredHubSuite) TestSubscribeHandler(c *gc.C) {
 	}
 }
 
+func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
+	called := false
+	hub := pubsub.NewStructuredHub(nil)
+	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data map[string]interface{}, err error) {
+		c.Check(err, jc.ErrorIsNil)
+		c.Check(data, gc.NotNil)
+		c.Check(data, gc.HasLen, 0)
+		called = true
+	})
+	defer sub.Unsubscribe()
+
+	completer, err := hub.Publish(topic, nil)
+	c.Assert(err, jc.ErrorIsNil)
+
+	select {
+	case <-completer.Complete():
+	case <-time.After(veryShortTime):
+		c.Fatal("publish did not complete")
+	}
+
+	c.Check(called, jc.IsTrue)
+}
+
 func (*StructuredHubSuite) TestBadPublish(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
 	completer, err := hub.Publish(first, "hello")

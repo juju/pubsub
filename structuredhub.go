@@ -77,6 +77,9 @@ func NewStructuredHub(config *StructuredHubConfig) Hub {
 
 // Publish implements Hub.
 func (h *structuredHub) Publish(topic Topic, data interface{}) (Completer, error) {
+	if data == nil {
+		data = make(map[string]interface{})
+	}
 	asMap, err := h.toStringMap(data)
 	if err != nil {
 		return nil, errors.Trace(err)
