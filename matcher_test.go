@@ -11,7 +11,7 @@ import (
 )
 
 type MatcherSuite struct {
-	testing.LoggingCleanupSuite
+	testing.IsolationSuite
 }
 
 var (
