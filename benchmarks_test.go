@@ -38,4 +38,6 @@ func (*BenchmarkSuite) BenchmarkStructuredNoConversions(c *gc.C) {
 			failedCount++
 		}
 	}
+	c.Check(failedCount, gc.Equals, 0)
+	c.Check(counter, jc.GreaterThan, 0)
 }
