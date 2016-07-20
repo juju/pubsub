@@ -3,10 +3,16 @@
 
 package pubsub
 
-import (
-	"fmt"
-	"regexp"
-)
+import "regexp"
+
+// Topic represents a message that can be subscribed to.
+type Topic string
+
+// TopicMatcher defines the Match method that is used to determine
+// if the subscriber should be notified about a particular message.
+type TopicMatcher interface {
+	Match(Topic) bool
+}
 
 // Match implements TopicMatcher. One topic matches another if they
 // are equal.
@@ -14,27 +20,26 @@ func (t Topic) Match(topic Topic) bool {
 	return t == topic
 }
 
-type regexMatcher struct {
-	match *regexp.Regexp
-}
+// RegexpMatcher allows standard regular expressions to be used as
+// TopicMatcher values. RegexpMatches can be created using the short-hand
+// function MatchRegexp function that wraps regexp.MustCompile.
+type RegexpMatcher regexp.Regexp
 
-// MatchRegex expects a valid regular expression. If the expression
+// MatchRegexp expects a valid regular expression. If the expression
 // passed in is not valid, the function panics. The expected use of this
 // is to be able to do something like:
 //
 //     hub.Subscribe(pubsub.MatchRegex("prefix.*suffix"), handler)
-func MatchRegex(expression string) TopicMatcher {
-	matcher, err := regexp.Compile(expression)
-	if err != nil {
-		panic(fmt.Sprintf("expression must be a valid regular expression: %v", err))
-	}
-	return &regexMatcher{matcher}
+func MatchRegexp(expression string) TopicMatcher {
+	return (*RegexpMatcher)(regexp.MustCompile(expression))
 }
 
-// Match implements TopicMatcher. One topic matches another if they
-// are equal.
-func (m *regexMatcher) Match(topic Topic) bool {
-	return m.match.MatchString(string(topic))
+// Match implements TopicMatcher.
+//
+// The topic matches if the regular expression matches the topic.
+func (m *RegexpMatcher) Match(topic Topic) bool {
+	r := (*regexp.Regexp)(m)
+	return r.MatchString(string(topic))
 }
 
 type allMatcher struct{}

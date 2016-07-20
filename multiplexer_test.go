@@ -19,24 +19,9 @@ type MultiplexerHubSuite struct {
 
 var _ = gc.Suite(&MultiplexerHubSuite{})
 
-func (*MultiplexerHubSuite) TestNewMultiplexerNil(c *gc.C) {
-	sub, multi, err := pubsub.NewMultiplexer(nil)
-	c.Check(sub, gc.IsNil)
-	c.Check(multi, gc.IsNil)
-	c.Check(err, gc.ErrorMatches, "nil hub not valid")
-}
-
-func (*MultiplexerHubSuite) TestNewMultiplexerSimpleHub(c *gc.C) {
-	hub := pubsub.NewSimpleHub()
-	sub, multi, err := pubsub.NewMultiplexer(hub)
-	c.Check(sub, gc.IsNil)
-	c.Check(multi, gc.IsNil)
-	c.Check(err, gc.ErrorMatches, "hub was not a StructuredHub")
-}
-
 func (*MultiplexerHubSuite) TestNewMultiplexerStructuredHub(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := pubsub.NewMultiplexer(hub)
+	sub, multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
 	sub.Unsubscribe()
 	c.Check(multi, gc.NotNil)
@@ -44,7 +29,7 @@ func (*MultiplexerHubSuite) TestNewMultiplexerStructuredHub(c *gc.C) {
 
 func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := pubsub.NewMultiplexer(hub)
+	sub, multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
 	sub.Unsubscribe()
 	for i, test := range []struct {
@@ -60,9 +45,17 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 			handler:     "a string",
 			err:         "handler of type string not valid",
 		}, {
+			description: "too few args",
+			handler:     func(string) {},
+			err:         "expected 2 or 3 args, got 1, incorrect handler signature not valid",
+		}, {
+			description: "too many args",
+			handler:     func(string, string, string, string) {},
+			err:         "expected 2 or 3 args, got 4, incorrect handler signature not valid",
+		}, {
 			description: "simple hub handler function",
 			handler:     func(pubsub.Topic, interface{}) {},
-			err:         "expected 3 args, got 2, incorrect handler signature not valid",
+			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad return values in handler function",
 			handler:     func(pubsub.Topic, interface{}, error) error { return nil },
@@ -74,18 +67,22 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 		}, {
 			description: "bad second arg",
 			handler:     func(pubsub.Topic, string, error) {},
-			err:         "second arg should be a structure for data, incorrect handler signature not valid",
+			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(pubsub.Topic, map[string]interface{}, bool) {},
-			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
+			handler:     func(pubsub.Topic, map[string]interface{}, error) {},
+			err:         "data type of map\\[string\\]interface{} expects only 2 args, got 3, incorrect handler signature not valid",
 		}, {
 			description: "accept map[string]interface{}",
-			handler:     func(pubsub.Topic, map[string]interface{}, error) {},
+			handler:     func(pubsub.Topic, map[string]interface{}) {},
 		}, {
 			description: "bad map[string]string",
 			handler:     func(pubsub.Topic, map[string]string, error) {},
-			err:         "second arg should be a structure for data, incorrect handler signature not valid",
+			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
+		}, {
+			description: "bad third arg",
+			handler:     func(pubsub.Topic, Emitter, bool) {},
+			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
 		}, {
 			description: "accept struct value",
 			handler:     func(pubsub.Topic, Emitter, error) {},
@@ -103,14 +100,14 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 
 func (*MultiplexerHubSuite) TestMatcher(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := pubsub.NewMultiplexer(hub)
+	sub, multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
 	defer sub.Unsubscribe()
 
-	noopFunc := func(pubsub.Topic, map[string]interface{}, error) {}
+	noopFunc := func(pubsub.Topic, map[string]interface{}) {}
 	err = multi.Add(first, noopFunc)
 	c.Assert(err, jc.ErrorIsNil)
-	err = multi.Add(pubsub.MatchRegex("second.*"), noopFunc)
+	err = multi.Add(pubsub.MatchRegexp("second.*"), noopFunc)
 	c.Assert(err, jc.ErrorIsNil)
 
 	c.Check(multi.Match(first), jc.IsTrue)
@@ -132,7 +129,7 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 		mapCalled     bool
 	)
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := pubsub.NewMultiplexer(hub)
+	sub, multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
 	defer sub.Unsubscribe()
 
@@ -148,8 +145,7 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 		messageCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	err = multi.Add(pubsub.MatchAll, func(top pubsub.Topic, data map[string]interface{}, err error) {
-		c.Check(err, jc.ErrorIsNil)
+	err = multi.Add(pubsub.MatchAll, func(top pubsub.Topic, data map[string]interface{}) {
 		c.Check(top, gc.Equals, topic)
 		c.Check(data, jc.DeepEquals, map[string]interface{}{
 			"origin":  "test",
@@ -159,11 +155,11 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 		mapCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	result, err := hub.Publish(topic, source)
+	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}

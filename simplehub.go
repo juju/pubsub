@@ -6,44 +6,55 @@ package pubsub
 import (
 	"sync"
 
-	"github.com/juju/errors"
 	"github.com/juju/loggo"
 )
 
-// NewSimpleHub returns a new Hub instance.
+// SimpleHubConfig is the argument struct for NewSimpleHub.
+type SimpleHubConfig struct {
+	// LogModule allows for overriding the default logging module.
+	// The default value is "pubsub.simple".
+	LogModule string
+}
+
+// NewSimpleHub returns a new SimpleHub instance.
 //
 // A simple hub does not touch the data that is passed through to Publish.
 // This data is passed through to each Subscriber. Note that all subscribers
 // are notified in parallel, and that no modification should be done to the
 // data or data races will occur.
-//
-// All handler functions passed into Subscribe methods of a SimpleHub should
-// be `func(Topic, interface{})`. The topic of the published method is the first
-// parameter, and the published data is the seconnd parameter.
-func NewSimpleHub() Hub {
-	return &simplehub{
-		logger: loggo.GetLogger("pubsub.simple"),
+func NewSimpleHub(config *SimpleHubConfig) *SimpleHub {
+	if config == nil {
+		config = new(SimpleHubConfig)
+	}
+
+	module := "pubsub.simple"
+	if config.LogModule != "" {
+		module = config.LogModule
+	}
+	return &SimpleHub{
+		logger: loggo.GetLogger(module),
 	}
 }
 
-type simplehub struct {
+// SimpleHub provides the base functionality of dealing with subscribers,
+// and the notification of subscribers of events.
+type SimpleHub struct {
 	mutex       sync.Mutex
 	subscribers []*subscriber
 	idx         int
 	logger      loggo.Logger
 }
 
-type doneHandle struct {
-	done chan struct{}
-}
-
-// Complete implements Completer.
-func (d *doneHandle) Complete() <-chan struct{} {
-	return d.done
-}
-
-// Publish implements Hub.
-func (h *simplehub) Publish(topic Topic, data interface{}) (Completer, error) {
+// Publish will notifiy all the subscribers that are interested by calling
+// their handler function.
+//
+// The data is passed through to each Subscriber untouched. Note that all
+// subscribers are notified in parallel, and that no modification should be
+// done to the data or data races will occur.
+//
+// The channel return value is closed when all the subscribers have been
+// notified of the event.
+func (h *SimpleHub) Publish(topic Topic, data interface{}) <-chan struct{} {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -67,26 +78,30 @@ func (h *simplehub) Publish(topic Topic, data interface{}) (Completer, error) {
 		close(done)
 	}()
 
-	return &doneHandle{done: done}, nil
+	return done
 }
 
-// Subscribe implements Hub.
-func (h *simplehub) Subscribe(matcher TopicMatcher, handler interface{}) (Unsubscriber, error) {
+// Subscribe takes a topic matcher, and a handler function. If the matcher
+// matches the published topic, the handler function is called with the
+// published Topic and the associated data.
+//
+// The handler function will be called with all maching published events until
+// the Unsubscribe method on the Unsubscriber is called.
+func (h *SimpleHub) Subscribe(matcher TopicMatcher, handler func(Topic, interface{})) Unsubscriber {
+	if handler == nil || matcher == nil {
+		return nil
+	}
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	sub, err := newSubscriber(matcher, handler)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-
+	sub := newSubscriber(matcher, handler, h.logger)
 	sub.id = h.idx
 	h.idx++
 	h.subscribers = append(h.subscribers, sub)
-	return &handle{hub: h, id: sub.id}, nil
+	return &handle{hub: h, id: sub.id}
 }
 
-func (h *simplehub) unsubscribe(id int) {
+func (h *SimpleHub) unsubscribe(id int) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -100,7 +115,7 @@ func (h *simplehub) unsubscribe(id int) {
 }
 
 type handle struct {
-	hub *simplehub
+	hub *SimpleHub
 	id  int
 }
 
@@ -113,14 +128,8 @@ type handlerCallback struct {
 	topic Topic
 	data  interface{}
 	wg    *sync.WaitGroup
-	mu    sync.Mutex
 }
 
 func (h *handlerCallback) done() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.wg != nil {
-		h.wg.Done()
-		h.wg = nil
-	}
+	h.wg.Done()
 }

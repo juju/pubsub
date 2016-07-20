@@ -28,12 +28,11 @@ var (
 )
 
 func (*SimpleHubSuite) TestPublishNoSubscribers(c *gc.C) {
-	hub := pubsub.NewSimpleHub()
-	result, err := hub.Publish(topic, nil)
-	c.Assert(err, jc.ErrorIsNil)
+	hub := pubsub.NewSimpleHub(nil)
+	done := hub.Publish(topic, nil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -41,17 +40,16 @@ func (*SimpleHubSuite) TestPublishNoSubscribers(c *gc.C) {
 
 func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
 	var called bool
-	hub := pubsub.NewSimpleHub()
+	hub := pubsub.NewSimpleHub(nil)
 	hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
 		c.Check(topic, gc.Equals, topic)
 		c.Check(data, gc.IsNil)
 		called = true
 	})
-	result, err := hub.Publish(topic, nil)
-	c.Assert(err, jc.ErrorIsNil)
+	done := hub.Publish(topic, nil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -60,15 +58,14 @@ func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
 
 func (*SimpleHubSuite) TestPublishCompleterWaits(c *gc.C) {
 	wait := make(chan struct{})
-	hub := pubsub.NewSimpleHub()
+	hub := pubsub.NewSimpleHub(nil)
 	hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
 		<-wait
 	})
-	result, err := hub.Publish(topic, nil)
-	c.Assert(err, jc.ErrorIsNil)
+	done := hub.Publish(topic, nil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 		c.Fatal("didn't wait")
 	case <-time.After(veryShortTime):
 	}
@@ -76,7 +73,7 @@ func (*SimpleHubSuite) TestPublishCompleterWaits(c *gc.C) {
 	close(wait)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -85,21 +82,19 @@ func (*SimpleHubSuite) TestPublishCompleterWaits(c *gc.C) {
 func (*SimpleHubSuite) TestSubscriberExecsInOrder(c *gc.C) {
 	mutex := sync.Mutex{}
 	var calls []pubsub.Topic
-	hub := pubsub.NewSimpleHub()
-	_, err := hub.Subscribe(pubsub.MatchRegex("test.*"), func(topic pubsub.Topic, data interface{}) {
+	hub := pubsub.NewSimpleHub(nil)
+	hub.Subscribe(pubsub.MatchRegexp("test.*"), func(topic pubsub.Topic, data interface{}) {
 		mutex.Lock()
 		defer mutex.Unlock()
 		calls = append(calls, topic)
 	})
-	c.Assert(err, gc.IsNil)
-	var lastCall pubsub.Completer
+	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall, err = hub.Publish(pubsub.Topic(fmt.Sprintf("test.%v", i)), nil)
-		c.Assert(err, jc.ErrorIsNil)
+		lastCall = hub.Publish(pubsub.Topic(fmt.Sprintf("test.%v", i)), nil)
 	}
 
 	select {
-	case <-lastCall.Complete():
+	case <-lastCall:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -108,21 +103,19 @@ func (*SimpleHubSuite) TestSubscriberExecsInOrder(c *gc.C) {
 
 func (*SimpleHubSuite) TestPublishNotBlockedByHandlerFunc(c *gc.C) {
 	wait := make(chan struct{})
-	hub := pubsub.NewSimpleHub()
-	_, err := hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
+	hub := pubsub.NewSimpleHub(nil)
+	hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
 		<-wait
 	})
-	c.Assert(err, gc.IsNil)
-	var lastCall pubsub.Completer
+	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall, err = hub.Publish(topic, nil)
-		c.Assert(err, jc.ErrorIsNil)
+		lastCall = hub.Publish(topic, nil)
 	}
 	// release the handlers
 	close(wait)
 
 	select {
-	case <-lastCall.Complete():
+	case <-lastCall:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -132,10 +125,10 @@ func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
 	wait := make(chan struct{})
 	mutex := sync.Mutex{}
 	var calls []pubsub.Topic
-	hub := pubsub.NewSimpleHub()
+	hub := pubsub.NewSimpleHub(nil)
 	var unsubscriber pubsub.Unsubscriber
 	var err error
-	unsubscriber, err = hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
+	unsubscriber = hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
 		<-wait
 		mutex.Lock()
 		defer mutex.Unlock()
@@ -143,16 +136,15 @@ func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
 		unsubscriber.Unsubscribe()
 	})
 	c.Assert(err, gc.IsNil)
-	var lastCall pubsub.Completer
+	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall, err = hub.Publish(topic, nil)
-		c.Assert(err, jc.ErrorIsNil)
+		lastCall = hub.Publish(topic, nil)
 	}
 	// release the handlers
 	close(wait)
 
 	select {
-	case <-lastCall.Complete():
+	case <-lastCall:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -161,24 +153,28 @@ func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
 }
 
 func (*SimpleHubSuite) TestSubscribeMissingHandler(c *gc.C) {
-	hub := pubsub.NewSimpleHub()
-	_, err := hub.Subscribe(topic, nil)
-	c.Assert(err, gc.ErrorMatches, "missing handler not valid")
+	hub := pubsub.NewSimpleHub(nil)
+	unsubscriber := hub.Subscribe(topic, nil)
+	c.Assert(unsubscriber, gc.IsNil)
+}
+
+func (*SimpleHubSuite) TestSubscribeMissingMatcher(c *gc.C) {
+	hub := pubsub.NewSimpleHub(nil)
+	unsubscriber := hub.Subscribe(nil, func(pubsub.Topic, interface{}) {})
+	c.Assert(unsubscriber, gc.IsNil)
 }
 
 func (*SimpleHubSuite) TestUnsubscribe(c *gc.C) {
 	var called bool
-	hub := pubsub.NewSimpleHub()
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
+	hub := pubsub.NewSimpleHub(nil)
+	sub := hub.Subscribe(topic, func(topic pubsub.Topic, data interface{}) {
 		called = true
 	})
-	c.Assert(err, jc.ErrorIsNil)
 	sub.Unsubscribe()
-	result, err := hub.Publish(topic, nil)
-	c.Assert(err, jc.ErrorIsNil)
+	done := hub.Publish(topic, nil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}
@@ -190,16 +186,15 @@ func (*SimpleHubSuite) TestSubscriberMultipleCallbacks(c *gc.C) {
 	secondCalled := false
 	thirdCalled := false
 
-	hub := pubsub.NewSimpleHub()
+	hub := pubsub.NewSimpleHub(nil)
 	hub.Subscribe(topic, func(pubsub.Topic, interface{}) { firstCalled = true })
 	hub.Subscribe(topic, func(pubsub.Topic, interface{}) { secondCalled = true })
 	hub.Subscribe(topic, func(pubsub.Topic, interface{}) { thirdCalled = true })
 
-	result, err := hub.Publish(topic, nil)
-	c.Assert(err, jc.ErrorIsNil)
+	done := hub.Publish(topic, nil)
 
 	select {
-	case <-result.Complete():
+	case <-done:
 	case <-time.After(veryShortTime):
 		c.Fatal("publish did not complete")
 	}

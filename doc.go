@@ -3,22 +3,17 @@
 
 // Package pubsub provides publish and subscribe functionality within a single process.
 //
-// The core aspect of the pubsub package is the `Hub`. The hub just provides
-// two methods:
-// * Publish
-// * Subscribe
-//
 // A message as far as a hub is concerned is defined by a topic, and a data
 // blob. All subscribers that match the published topic are notified, and have
 // their callback function called with both the topic and the data blob.
 //
-// All subscribers get their own go routine. This way slow consumers do not
+// All subscribers get their own goroutine. This way slow consumers do not
 // slow down the act of publishing, and slow consumers do not inferfere with
 // other consumers. Subscribers are guaranteed to get the messages that match
 // their topic matcher in the order that the messages were published to the
 // hub.
 //
-// This package defines two types of Hubs.
+// This package defines two types of hubs.
 // * Simple hubs
 // * Structured hubs
 //
@@ -28,12 +23,9 @@
 // it. The subscription handler functions for structured hubs allow the
 // handlers to define a structure for the datablob to be marshalled into.
 //
-// Handler functions for the simple hubs must conform to:
-//   func (Topic, interface{})
-//
 // Hander functions for a structured hub can get all the published data available
 // by defining a callback with the signature:
-//   func (Topic, map[string]interface{}, error)
+//   func (Topic, map[string]interface{})
 //
 // Or alternatively, define a struct type, and use that type as the second argument.
 //   func (Topic, SomeStruct, error)

@@ -4,19 +4,23 @@
 package pubsub
 
 import (
-	"reflect"
 	"sync"
 
-	"github.com/juju/errors"
 	"github.com/juju/loggo"
 	"github.com/juju/utils/deque"
 )
 
-var logger = loggo.GetLogger("pubsub.subscriber")
+// Unsubscriber provides a way to stop receiving handler callbacks.
+// Unsubscribing from a hub will also mark any pending notifications as done,
+// and the handler will not be called for them.
+type Unsubscriber interface {
+	Unsubscribe()
+}
 
 type subscriber struct {
 	id int
 
+	logger       loggo.Logger
 	topicMatcher TopicMatcher
 	handler      func(topic Topic, data interface{})
 
@@ -27,27 +31,23 @@ type subscriber struct {
 	done    chan struct{}
 }
 
-func newSubscriber(matcher TopicMatcher, handler interface{}) (*subscriber, error) {
-	f, err := checkHandler(handler)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-	logger.Tracef("new subscriber, handler func %v", f)
+func newSubscriber(matcher TopicMatcher, handler func(Topic, interface{}), logger loggo.Logger) *subscriber {
 	// A closed channel is used to provide an immediate route through a select
 	// call in the loop function.
 	closed := make(chan struct{})
 	close(closed)
 	sub := &subscriber{
+		logger:       logger,
 		topicMatcher: matcher,
-		handler:      f,
+		handler:      handler,
 		pending:      deque.New(),
 		data:         make(chan struct{}, 1),
 		done:         make(chan struct{}),
 		closed:       closed,
 	}
 	go sub.loop()
-	logger.Debugf("created subscriber %p for %v", sub, matcher)
-	return sub, nil
+	sub.logger.Debugf("created subscriber %p for %v", sub, matcher)
+	return sub
 }
 
 func (s *subscriber) close() {
@@ -82,7 +82,7 @@ func (s *subscriber) loop() {
 		// call *should* never be nil as we should only be calling
 		// popOne in the situations where there is actually something to pop.
 		if call != nil {
-			logger.Tracef("exec callback %p (%d) func %p", s, s.id, s.handler)
+			s.logger.Tracef("exec callback %p (%d) func %p", s, s.id, s.handler)
 			s.handler(call.topic, call.data)
 			call.done()
 		}
@@ -102,36 +102,11 @@ func (s *subscriber) popOne() (*handlerCallback, bool) {
 }
 
 func (s *subscriber) notify(call *handlerCallback) {
-	logger.Tracef("notify %d", s.id)
+	s.logger.Tracef("notify %d", s.id)
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.pending.PushBack(call)
 	if s.pending.Len() == 1 {
 		s.data <- struct{}{}
 	}
-}
-
-// checkHandler makes sure that the handler value passed in is a function
-// and has the signature:
-//    func(Topic, interface{})
-func checkHandler(handler interface{}) (func(Topic, interface{}), error) {
-	logger.Tracef("checkHandler, handler func %v", handler)
-	if handler == nil {
-		return nil, errors.NotValidf("missing handler")
-	}
-	t := reflect.TypeOf(handler)
-	if t.Kind() != reflect.Func {
-		return nil, errors.NotValidf("handler of type %T", handler)
-	}
-	var result func(Topic, interface{})
-	rt := reflect.TypeOf(result)
-	if !t.AssignableTo(rt) {
-		return nil, errors.NotValidf("incorrect handler signature")
-	}
-	f, ok := handler.(func(Topic, interface{}))
-	if !ok {
-		// This shouldn't happen due to the assignable check just above.
-		return nil, errors.NotValidf("incorrect handler signature")
-	}
-	return f, nil
 }

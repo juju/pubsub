@@ -11,8 +11,13 @@ import (
 	"github.com/juju/loggo"
 )
 
-type structuredHub struct {
-	simplehub
+// StructuredHub allows the hander functions to accept either structures
+// or map[string]interface{}. The published structure does not need to match
+// the structures of the subscribers. The structures are marshalled using the
+// Marshaller defined in the StructuredHubConfig. If one is not specified, the
+// marshalling is handled by the standard json library.
+type StructuredHub struct {
+	hub SimpleHub
 
 	marshaller  Marshaller
 	annotations map[string]interface{}
@@ -23,12 +28,20 @@ type structuredHub struct {
 // deserialize the structures used in Publish and Subscription handlers of the
 // structured hub.
 type Marshaller interface {
+	// Marshal converts the argument into a byte streem that it can then Unmarshal.
 	Marshal(interface{}) ([]byte, error)
+
+	// Unmarshal attempts to convert the byte stream into type passed in as the
+	// second arg.
 	Unmarshal([]byte, interface{}) error
 }
 
 // StructuredHubConfig is the argument struct for NewStructuredHub.
 type StructuredHubConfig struct {
+	// LogModule allows for overriding the default logging module.
+	// The default value is "pubsub.structured".
+	LogModule string
+
 	// Marshaller defines how the structured hub will convert from structures to
 	// a map[string]interface{} and back. If this is not specified, the
 	// `JSONMarshaller` is used.
@@ -39,7 +52,9 @@ type StructuredHubConfig struct {
 	Annotations map[string]interface{}
 
 	// PostProcess allows the caller to modify the resulting
-	// map[string]interface{}.
+	// map[string]interface{}. This is useful when a dynamic value, such as a
+	// timestamp is added to the map, or when other type conversions are
+	// necessary across all the values in the map.
 	PostProcess func(map[string]interface{}) (map[string]interface{}, error)
 }
 
@@ -57,17 +72,21 @@ func (*jsonMarshaller) Unmarshal(data []byte, v interface{}) error {
 	return json.Unmarshal(data, v)
 }
 
-// NewStructuredHub returns a new Hub instance.
-func NewStructuredHub(config *StructuredHubConfig) Hub {
+// NewStructuredHub returns a new StructuredHub instance.
+func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 	if config == nil {
 		config = new(StructuredHubConfig)
+	}
+	module := "pubsub.structured"
+	if config.LogModule != "" {
+		module = config.LogModule
 	}
 	if config.Marshaller == nil {
 		config.Marshaller = JSONMarshaller
 	}
-	return &structuredHub{
-		simplehub: simplehub{
-			logger: loggo.GetLogger("pubsub.structured"),
+	return &StructuredHub{
+		hub: SimpleHub{
+			logger: loggo.GetLogger(module),
 		},
 		marshaller:  config.Marshaller,
 		annotations: config.Annotations,
@@ -75,8 +94,23 @@ func NewStructuredHub(config *StructuredHubConfig) Hub {
 	}
 }
 
-// Publish implements Hub.
-func (h *structuredHub) Publish(topic Topic, data interface{}) (Completer, error) {
+// Publish will notifiy all the subscribers that are interested by calling
+// their handler function.
+//
+// The data is serialized out using the marshaller and then back into  a
+// map[string]interface{}. If there is an error marshalling the data, Publish
+// fails with an error.  The resulting map is then updated with any
+// annotations provided. The annotated values are only set if the specified
+// field is missing or empty. After the annotations are set, the PostProcess
+// function is called if one was specified. The resulting map is then passed
+// to each of the subscribers.
+//
+// Subscribers are notified in parallel, and that no
+// modification should be done to the data or data races will occur.
+//
+// The channel return value is closed when all the subscribers have been
+// notified of the event.
+func (h *StructuredHub) Publish(topic Topic, data interface{}) (<-chan struct{}, error) {
 	if data == nil {
 		data = make(map[string]interface{})
 	}
@@ -95,11 +129,11 @@ func (h *structuredHub) Publish(topic Topic, data interface{}) (Completer, error
 			return nil, errors.Trace(err)
 		}
 	}
-	h.logger.Tracef("publish %q: %#v", topic, asMap)
-	return h.simplehub.Publish(topic, asMap)
+	h.hub.logger.Tracef("publish %q: %#v", topic, asMap)
+	return h.hub.Publish(topic, asMap), nil
 }
 
-func (h *structuredHub) toStringMap(data interface{}) (map[string]interface{}, error) {
+func (h *StructuredHub) toStringMap(data interface{}) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	resultType := reflect.TypeOf(result)
 	dataType := reflect.TypeOf(data)
@@ -121,11 +155,28 @@ func (h *structuredHub) toStringMap(data interface{}) (map[string]interface{}, e
 	return result, nil
 }
 
-// Subscribe implements Hub.
-func (h *structuredHub) Subscribe(matcher TopicMatcher, handler interface{}) (Unsubscriber, error) {
-	callback, err := newStructuredCallback(h.marshaller, handler)
+// Subscribe takes a topic matcher, and a handler function. If the matcher
+// matches the published topic, the handler function is called with the
+// published Topic and the associated data.
+//
+// The handler function will be called with all maching published events until
+// the Unsubscribe method on the Unsubscriber is called.
+//
+// The hander function must have the signature:
+//   `func(Topic, map[string]interface{})`
+// or
+//   `func(Topic, SomeStruct, error)`
+// where `SomeStruct` is any structure. The map[string]interface{} from the
+// Publish call is unmarshalled into the `SomeStruct` structure. If there is
+// an error unmarshalling the handler is called with a zerod structure and an
+// error with the marshalling error.
+func (h *StructuredHub) Subscribe(matcher TopicMatcher, handler interface{}) (Unsubscriber, error) {
+	if matcher == nil {
+		return nil, errors.NotValidf("missing matcher")
+	}
+	callback, err := newStructuredCallback(h.hub.logger, h.marshaller, handler)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	return h.simplehub.Subscribe(matcher, callback.handler)
+	return h.hub.Subscribe(matcher, callback.handler), nil
 }
