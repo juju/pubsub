@@ -35,7 +35,37 @@ func (*BenchmarkSuite) BenchmarkStructuredNoConversions(c *gc.C) {
 
 		select {
 		case <-done:
-		case <-time.After(5 * veryShortTime):
+		case <-time.After(time.Second):
+			failedCount++
+		}
+	}
+	c.Check(failedCount, gc.Equals, 0)
+	c.Check(counter, jc.GreaterThan, 0)
+}
+
+func (*BenchmarkSuite) BenchmarkStructuredSerialize(c *gc.C) {
+	hub := pubsub.NewStructuredHub(nil)
+	topic := pubsub.Topic("benchmarking")
+	counter := 0
+	sub, err := hub.Subscribe(pubsub.MatchAll, func(topic pubsub.Topic, data Emitter, err error) {
+		c.Assert(err, jc.ErrorIsNil)
+		counter++
+	})
+	c.Assert(err, jc.ErrorIsNil)
+	defer sub.Unsubscribe()
+	failedCount := 0
+	data := Emitter{
+		Origin:  "master",
+		Message: "hello world",
+		ID:      42,
+	}
+	for i := 0; i < c.N; i++ {
+		done, err := hub.Publish(topic, data)
+		c.Assert(err, jc.ErrorIsNil)
+
+		select {
+		case <-done:
+		case <-time.After(time.Second):
 			failedCount++
 		}
 	}

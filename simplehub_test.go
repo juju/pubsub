@@ -22,20 +22,23 @@ type SimpleHubSuite struct {
 var (
 	_ = gc.Suite(&SimpleHubSuite{})
 
-	veryShortTime = time.Millisecond
-
 	topic pubsub.Topic = "testing"
 )
+
+func waitForMessageHandlingToBeComplete(c *gc.C, done <-chan struct{}) {
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		// We expect message handling to be done in under 1ms
+		// so waiting for a second is 1000x as long.
+		c.Fatal("publish did not complete")
+	}
+}
 
 func (*SimpleHubSuite) TestPublishNoSubscribers(c *gc.C) {
 	hub := pubsub.NewSimpleHub(nil)
 	done := hub.Publish(topic, nil)
-
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 }
 
 func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
@@ -48,11 +51,7 @@ func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
 	})
 	done := hub.Publish(topic, nil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Assert(called, jc.IsTrue)
 }
 
@@ -67,16 +66,13 @@ func (*SimpleHubSuite) TestPublishCompleterWaits(c *gc.C) {
 	select {
 	case <-done:
 		c.Fatal("didn't wait")
-	case <-time.After(veryShortTime):
+	case <-time.After(time.Millisecond):
+		// Under normal circumstances, this would take ~3000ns
+		// See benchmark tests for speed.
 	}
 
 	close(wait)
-
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 }
 
 func (*SimpleHubSuite) TestSubscriberExecsInOrder(c *gc.C) {
@@ -93,11 +89,7 @@ func (*SimpleHubSuite) TestSubscriberExecsInOrder(c *gc.C) {
 		lastCall = hub.Publish(pubsub.Topic(fmt.Sprintf("test.%v", i)), nil)
 	}
 
-	select {
-	case <-lastCall:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, lastCall)
 	c.Assert(calls, jc.DeepEquals, []pubsub.Topic{"test.0", "test.1", "test.2", "test.3", "test.4"})
 }
 
@@ -114,11 +106,7 @@ func (*SimpleHubSuite) TestPublishNotBlockedByHandlerFunc(c *gc.C) {
 	// release the handlers
 	close(wait)
 
-	select {
-	case <-lastCall:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, lastCall)
 }
 
 func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
@@ -143,11 +131,7 @@ func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
 	// release the handlers
 	close(wait)
 
-	select {
-	case <-lastCall:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, lastCall)
 	// Only the first handler should execute as we unsubscribe in it.
 	c.Assert(calls, jc.DeepEquals, []pubsub.Topic{topic})
 }
@@ -173,11 +157,7 @@ func (*SimpleHubSuite) TestUnsubscribe(c *gc.C) {
 	sub.Unsubscribe()
 	done := hub.Publish(topic, nil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Assert(called, jc.IsFalse)
 }
 
@@ -193,12 +173,7 @@ func (*SimpleHubSuite) TestSubscriberMultipleCallbacks(c *gc.C) {
 
 	done := hub.Publish(topic, nil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
-
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(firstCalled, jc.IsTrue)
 	c.Check(secondCalled, jc.IsTrue)
 	c.Check(thirdCalled, jc.IsTrue)

@@ -6,7 +6,6 @@ package pubsub_test
 import (
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
@@ -125,12 +124,7 @@ func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 	done, err := hub.Publish(topic, nil)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
-
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(called, jc.IsTrue)
 }
 
@@ -184,11 +178,7 @@ func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	// Make sure they were all called.
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
@@ -238,11 +228,7 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	// Make sure they were all called.
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
@@ -268,11 +254,7 @@ func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Assert(called, jc.IsTrue)
 }
 
@@ -312,11 +294,7 @@ func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	// Make sure they were all called.
 	c.Assert(called, jc.IsTrue)
 }
@@ -346,21 +324,12 @@ func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
-
+	waitForMessageHandlingToBeComplete(c, done)
 	source.Origin = "other"
 	done, err = hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Assert(obtained, jc.DeepEquals, []string{origin, "other"})
 }
 
@@ -391,12 +360,7 @@ func (*StructuredHubSuite) TestPostProcess(c *gc.C) {
 	done, err := hub.Publish(topic, JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
-
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(values, jc.DeepEquals, []int{2, 3})
 }
 
@@ -435,12 +399,7 @@ func (*StructuredHubSuite) TestMultipleSubscribersSingleInstance(c *gc.C) {
 	done, err := hub.Publish("foo", MessageID{Message: message})
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
-
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(w.fromMap, jc.DeepEquals, []string{message})
 	c.Check(w.fromStruct, jc.DeepEquals, []string{message})
 }

@@ -4,8 +4,6 @@
 package pubsub_test
 
 import (
-	"time"
-
 	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
@@ -158,13 +156,8 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	select {
-	case <-done:
-	case <-time.After(veryShortTime):
-		c.Fatal("publish did not complete")
-	}
+	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsFalse)
 	c.Check(mapCalled, jc.IsTrue)
-
 }
