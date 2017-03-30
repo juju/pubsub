@@ -7,17 +7,16 @@ import (
 	"reflect"
 
 	"github.com/juju/errors"
-	"github.com/juju/loggo"
 )
 
 type structuredCallback struct {
-	logger     loggo.Logger
+	logger     Logger
 	marshaller Marshaller
 	callback   reflect.Value
 	dataType   reflect.Type
 }
 
-func newStructuredCallback(logger loggo.Logger, marshaller Marshaller, handler interface{}) (*structuredCallback, error) {
+func newStructuredCallback(logger Logger, marshaller Marshaller, handler interface{}) (*structuredCallback, error) {
 	rt, err := checkStructuredHandler(handler)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -31,7 +30,7 @@ func newStructuredCallback(logger loggo.Logger, marshaller Marshaller, handler i
 	}, nil
 }
 
-func (s *structuredCallback) handler(topic Topic, data interface{}) {
+func (s *structuredCallback) handler(topic string, data interface{}) {
 	// The data is always map[string]interface{}.
 	asMap := data.(map[string]interface{})
 	s.logger.Tracef("convert map to %v", s.dataType)
@@ -85,10 +84,10 @@ func checkStructuredHandler(handler interface{}) (reflect.Type, error) {
 		return nil, errors.NotValidf("expected 2 or 3 args, got %d, incorrect handler signature", t.NumIn())
 	}
 
-	var topic Topic
+	var topic string
 	var topicType = reflect.TypeOf(topic)
 	if t.In(0) != topicType {
-		return nil, errors.NotValidf("first arg should be a pubsub.Topic, incorrect handler signature")
+		return nil, errors.NotValidf("first arg should be a string, incorrect handler signature")
 	}
 
 	arg2 := t.In(1)

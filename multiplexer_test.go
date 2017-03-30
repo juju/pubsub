@@ -4,32 +4,29 @@
 package pubsub_test
 
 import (
-	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
 	"github.com/juju/pubsub"
 )
 
-type MultiplexerHubSuite struct {
-	testing.LoggingCleanupSuite
-}
+type MultiplexerHubSuite struct{}
 
 var _ = gc.Suite(&MultiplexerHubSuite{})
 
 func (*MultiplexerHubSuite) TestNewMultiplexerStructuredHub(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := hub.NewMultiplexer()
+	multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
-	sub.Unsubscribe()
+	defer multi.Unsubscribe()
 	c.Check(multi, gc.NotNil)
 }
 
 func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := hub.NewMultiplexer()
+	multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
-	sub.Unsubscribe()
+	defer multi.Unsubscribe()
 	for i, test := range []struct {
 		description string
 		handler     interface{}
@@ -52,42 +49,42 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 			err:         "expected 2 or 3 args, got 4, incorrect handler signature not valid",
 		}, {
 			description: "simple hub handler function",
-			handler:     func(pubsub.Topic, interface{}) {},
+			handler:     func(string, interface{}) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad return values in handler function",
-			handler:     func(pubsub.Topic, interface{}, error) error { return nil },
+			handler:     func(string, interface{}, error) error { return nil },
 			err:         "expected no return values, got 1, incorrect handler signature not valid",
 		}, {
 			description: "bad first arg",
-			handler:     func(string, map[string]interface{}, error) {},
-			err:         "first arg should be a pubsub.Topic, incorrect handler signature not valid",
+			handler:     func(int, map[string]interface{}, error) {},
+			err:         "first arg should be a string, incorrect handler signature not valid",
 		}, {
 			description: "bad second arg",
-			handler:     func(pubsub.Topic, string, error) {},
+			handler:     func(string, string, error) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(pubsub.Topic, map[string]interface{}, error) {},
+			handler:     func(string, map[string]interface{}, error) {},
 			err:         "data type of map\\[string\\]interface{} expects only 2 args, got 3, incorrect handler signature not valid",
 		}, {
 			description: "accept map[string]interface{}",
-			handler:     func(pubsub.Topic, map[string]interface{}) {},
+			handler:     func(string, map[string]interface{}) {},
 		}, {
 			description: "bad map[string]string",
-			handler:     func(pubsub.Topic, map[string]string, error) {},
+			handler:     func(string, map[string]string, error) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(pubsub.Topic, Emitter, bool) {},
+			handler:     func(string, Emitter, bool) {},
 			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
 		}, {
 			description: "accept struct value",
-			handler:     func(pubsub.Topic, Emitter, error) {},
+			handler:     func(string, Emitter, error) {},
 		},
 	} {
 		c.Logf("test %d: %s", i, test.description)
-		err := multi.Add(pubsub.MatchAll, test.handler)
+		err := multi.AddMatch(pubsub.MatchAll, test.handler)
 		if test.err == "" {
 			c.Check(err, jc.ErrorIsNil)
 		} else {
@@ -98,20 +95,20 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 
 func (*MultiplexerHubSuite) TestMatcher(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := hub.NewMultiplexer()
+	multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer multi.Unsubscribe()
 
-	noopFunc := func(pubsub.Topic, map[string]interface{}) {}
+	noopFunc := func(string, map[string]interface{}) {}
 	err = multi.Add(first, noopFunc)
 	c.Assert(err, jc.ErrorIsNil)
-	err = multi.Add(pubsub.MatchRegexp("second.*"), noopFunc)
+	err = multi.AddMatch(pubsub.MatchRegexp("second.*"), noopFunc)
 	c.Assert(err, jc.ErrorIsNil)
 
-	c.Check(multi.Match(first), jc.IsTrue)
-	c.Check(multi.Match(firstdot), jc.IsFalse)
-	c.Check(multi.Match(second), jc.IsTrue)
-	c.Check(multi.Match(space), jc.IsFalse)
+	c.Check(pubsub.MultiplexerMatch(multi, first), jc.IsTrue)
+	c.Check(pubsub.MultiplexerMatch(multi, firstdot), jc.IsFalse)
+	c.Check(pubsub.MultiplexerMatch(multi, second), jc.IsTrue)
+	c.Check(pubsub.MultiplexerMatch(multi, space), jc.IsFalse)
 }
 
 func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
@@ -121,29 +118,29 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 		ID:      42,
 	}
 	var (
-		topic         pubsub.Topic = "callback.topic"
+		topic         = "callback.topic"
 		originCalled  bool
 		messageCalled bool
 		mapCalled     bool
 	)
 	hub := pubsub.NewStructuredHub(nil)
-	sub, multi, err := hub.NewMultiplexer()
+	multi, err := hub.NewMultiplexer()
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer multi.Unsubscribe()
 
-	err = multi.Add(topic, func(top pubsub.Topic, data JustOrigin, err error) {
+	err = multi.Add(topic, func(top string, data JustOrigin, err error) {
 		c.Check(err, jc.ErrorIsNil)
 		c.Check(top, gc.Equals, topic)
 		c.Check(data.Origin, gc.Equals, source.Origin)
 		originCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	err = multi.Add(second, func(topic pubsub.Topic, data MessageID, err error) {
+	err = multi.Add(second, func(topic string, data MessageID, err error) {
 		c.Fail()
 		messageCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	err = multi.Add(pubsub.MatchAll, func(top pubsub.Topic, data map[string]interface{}) {
+	err = multi.AddMatch(pubsub.MatchAll, func(top string, data map[string]interface{}) {
 		c.Check(top, gc.Equals, topic)
 		c.Check(data, jc.DeepEquals, map[string]interface{}{
 			"origin":  "test",

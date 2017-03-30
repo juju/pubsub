@@ -6,28 +6,25 @@ package pubsub_test
 import (
 	"time"
 
-	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
 	"github.com/juju/pubsub"
 )
 
-type BenchmarkSuite struct {
-	testing.IsolationSuite
-}
+type BenchmarkSuite struct{}
 
 var _ = gc.Suite(&BenchmarkSuite{})
 
 func (*BenchmarkSuite) BenchmarkStructuredNoConversions(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	topic := pubsub.Topic("benchmarking")
+	topic := "benchmarking"
 	counter := 0
-	sub, err := hub.Subscribe(pubsub.MatchAll, func(topic pubsub.Topic, data map[string]interface{}) {
+	unsub, err := hub.SubscribeMatch(pubsub.MatchAll, func(topic string, data map[string]interface{}) {
 		counter++
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer unsub()
 	failedCount := 0
 	for i := 0; i < c.N; i++ {
 		done, err := hub.Publish(topic, nil)
@@ -45,14 +42,14 @@ func (*BenchmarkSuite) BenchmarkStructuredNoConversions(c *gc.C) {
 
 func (*BenchmarkSuite) BenchmarkStructuredSerialize(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	topic := pubsub.Topic("benchmarking")
+	topic := "benchmarking"
 	counter := 0
-	sub, err := hub.Subscribe(pubsub.MatchAll, func(topic pubsub.Topic, data Emitter, err error) {
+	unsub, err := hub.SubscribeMatch(pubsub.MatchAll, func(topic string, data Emitter, err error) {
 		c.Assert(err, jc.ErrorIsNil)
 		counter++
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer unsub()
 	failedCount := 0
 	data := Emitter{
 		Origin:  "master",

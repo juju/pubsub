@@ -4,43 +4,31 @@
 package pubsub_test
 
 import (
-	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
 	"github.com/juju/pubsub"
 )
 
-type MatcherSuite struct {
-	testing.IsolationSuite
-}
+type MatcherSuite struct{}
 
 var (
 	_ = gc.Suite(&MatcherSuite{})
 
-	first       pubsub.Topic = "first"
-	firstdot    pubsub.Topic = "first.next"
-	second      pubsub.Topic = "second"
-	secondfirst pubsub.Topic = "second.first.next"
-	space       pubsub.Topic = "a topic"
+	first       = "first"
+	firstdot    = "first.next"
+	second      = "second"
+	secondfirst = "second.first.next"
+	space       = "a topic"
 )
-
-func (*MatcherSuite) TestTopicMatches(c *gc.C) {
-	var matcher pubsub.TopicMatcher = first
-	c.Check(matcher.Match(first), jc.IsTrue)
-	c.Check(matcher.Match(firstdot), jc.IsFalse)
-	c.Check(matcher.Match(second), jc.IsFalse)
-	c.Check(matcher.Match(secondfirst), jc.IsFalse)
-	c.Check(matcher.Match(space), jc.IsFalse)
-}
 
 func (*MatcherSuite) TestMatchAll(c *gc.C) {
 	matcher := pubsub.MatchAll
-	c.Check(matcher.Match(first), jc.IsTrue)
-	c.Check(matcher.Match(firstdot), jc.IsTrue)
-	c.Check(matcher.Match(second), jc.IsTrue)
-	c.Check(matcher.Match(secondfirst), jc.IsTrue)
-	c.Check(matcher.Match(space), jc.IsTrue)
+	c.Check(matcher(first), jc.IsTrue)
+	c.Check(matcher(firstdot), jc.IsTrue)
+	c.Check(matcher(second), jc.IsTrue)
+	c.Check(matcher(secondfirst), jc.IsTrue)
+	c.Check(matcher(space), jc.IsTrue)
 }
 
 func (*MatcherSuite) TestMatchRegexpPanicsOnInvalid(c *gc.C) {
@@ -49,9 +37,9 @@ func (*MatcherSuite) TestMatchRegexpPanicsOnInvalid(c *gc.C) {
 
 func (*MatcherSuite) TestMatchRegexp(c *gc.C) {
 	matcher := pubsub.MatchRegexp("first.*")
-	c.Check(matcher.Match(first), jc.IsTrue)
-	c.Check(matcher.Match(firstdot), jc.IsTrue)
-	c.Check(matcher.Match(second), jc.IsFalse)
-	c.Check(matcher.Match(secondfirst), jc.IsTrue)
-	c.Check(matcher.Match(space), jc.IsFalse)
+	c.Check(matcher(first), jc.IsTrue)
+	c.Check(matcher(firstdot), jc.IsTrue)
+	c.Check(matcher(second), jc.IsFalse)
+	c.Check(matcher(secondfirst), jc.IsTrue)
+	c.Check(matcher(space), jc.IsFalse)
 }

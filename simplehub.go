@@ -3,17 +3,13 @@
 
 package pubsub
 
-import (
-	"sync"
-
-	"github.com/juju/loggo"
-)
+import "sync"
 
 // SimpleHubConfig is the argument struct for NewSimpleHub.
 type SimpleHubConfig struct {
-	// LogModule allows for overriding the default logging module.
-	// The default value is "pubsub.simple".
-	LogModule string
+	// Logger allows specifying a logging implementation for debug
+	// and trace level messages emitted from the hub.
+	Logger Logger
 }
 
 // NewSimpleHub returns a new SimpleHub instance.
@@ -27,12 +23,13 @@ func NewSimpleHub(config *SimpleHubConfig) *SimpleHub {
 		config = new(SimpleHubConfig)
 	}
 
-	module := "pubsub.simple"
-	if config.LogModule != "" {
-		module = config.LogModule
+	logger := config.Logger
+	if logger == nil {
+		logger = noOpLogger{}
 	}
+
 	return &SimpleHub{
-		logger: loggo.GetLogger(module),
+		logger: logger,
 	}
 }
 
@@ -42,7 +39,7 @@ type SimpleHub struct {
 	mutex       sync.Mutex
 	subscribers []*subscriber
 	idx         int
-	logger      loggo.Logger
+	logger      Logger
 }
 
 // Publish will notifiy all the subscribers that are interested by calling
@@ -54,7 +51,7 @@ type SimpleHub struct {
 //
 // The channel return value is closed when all the subscribers have been
 // notified of the event.
-func (h *SimpleHub) Publish(topic Topic, data interface{}) <-chan struct{} {
+func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -62,7 +59,7 @@ func (h *SimpleHub) Publish(topic Topic, data interface{}) <-chan struct{} {
 	wait := sync.WaitGroup{}
 
 	for _, s := range h.subscribers {
-		if s.topicMatcher.Match(topic) {
+		if s.topicMatcher(topic) {
 			wait.Add(1)
 			s.notify(
 				&handlerCallback{
@@ -81,15 +78,27 @@ func (h *SimpleHub) Publish(topic Topic, data interface{}) <-chan struct{} {
 	return done
 }
 
-// Subscribe takes a topic matcher, and a handler function. If the matcher
-// matches the published topic, the handler function is called with the
-// published Topic and the associated data.
+// Subscribe to a topic with a handler function. If the topic is the same
+// as the published topic, the handler function is called with the
+// published topic and the associated data.
 //
-// The handler function will be called with all maching published events until
-// the Unsubscribe method on the Unsubscriber is called.
-func (h *SimpleHub) Subscribe(matcher TopicMatcher, handler func(Topic, interface{})) Unsubscriber {
+// The return value is a function that will unsubscribe the caller from
+// the hub, for this subscription.
+func (h *SimpleHub) Subscribe(topic string, handler func(string, interface{})) func() {
+	return h.SubscribeMatch(equalTopic(topic), handler)
+}
+
+// SubscribeMatch takes a function that determins whether the topic matches,
+// and a handler function. If the matcher matches the published topic, the
+// handler function is called with the published topic and the associated
+// data.
+//
+// The return value is a function that will unsubscribe the caller from
+// the hub, for this subscription.
+func (h *SimpleHub) SubscribeMatch(matcher func(string) bool, handler func(string, interface{})) func() {
 	if handler == nil || matcher == nil {
-		return nil
+		// It is safe but useless.
+		return func() {}
 	}
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -98,7 +107,8 @@ func (h *SimpleHub) Subscribe(matcher TopicMatcher, handler func(Topic, interfac
 	sub.id = h.idx
 	h.idx++
 	h.subscribers = append(h.subscribers, sub)
-	return &handle{hub: h, id: sub.id}
+	unsub := &handle{hub: h, id: sub.id}
+	return unsub.Unsubscribe
 }
 
 func (h *SimpleHub) unsubscribe(id int) {
@@ -125,7 +135,7 @@ func (h *handle) Unsubscribe() {
 }
 
 type handlerCallback struct {
-	topic Topic
+	topic string
 	data  interface{}
 	wg    *sync.WaitGroup
 }
