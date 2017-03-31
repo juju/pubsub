@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/juju/errors"
-	"github.com/juju/loggo"
 )
 
 // Multiplexer allows multiple subscriptions to be made sharing a single
@@ -17,36 +16,44 @@ import (
 // matches any given topic, the handlers are called back one after the other
 // in the order that they were added.
 type Multiplexer interface {
-	TopicMatcher
-	Add(matcher TopicMatcher, handler interface{}) error
+	Add(topic string, handler interface{}) error
+	AddMatch(matcher func(string) bool, handler interface{}) error
+	Unsubscribe()
 }
 
 type element struct {
-	matcher  TopicMatcher
+	matcher  func(string) bool
 	callback *structuredCallback
 }
 
 type multiplexer struct {
-	logger     loggo.Logger
-	mu         sync.Mutex
-	outputs    []element
-	marshaller Marshaller
+	logger       Logger
+	mu           sync.Mutex
+	outputs      []element
+	marshaller   Marshaller
+	unsubscriber func()
 }
 
 // NewMultiplexer creates a new multiplexer for the hub and subscribes it.
 // Unsubscribing the multiplexer stops calls for all handlers added.
 // Only structured hubs support multiplexer.
-func (h *StructuredHub) NewMultiplexer() (Unsubscriber, Multiplexer, error) {
+func (h *StructuredHub) NewMultiplexer() (Multiplexer, error) {
 	mp := &multiplexer{logger: h.hub.logger, marshaller: h.marshaller}
-	unsub, err := h.Subscribe(mp, mp.callback)
+	unsub, err := h.SubscribeMatch(mp.match, mp.callback)
 	if err != nil {
-		return nil, nil, errors.Trace(err)
+		return nil, errors.Trace(err)
 	}
-	return unsub, mp, nil
+	mp.unsubscriber = unsub
+	return mp, nil
 }
 
-// Add another topic matcher and handler to the multiplexer.
-func (m *multiplexer) Add(matcher TopicMatcher, handler interface{}) error {
+// Add a handler for a specific topic.
+func (m *multiplexer) Add(topic string, handler interface{}) error {
+	return m.AddMatch(equalTopic(topic), handler)
+}
+
+// AddMatch adds another handler for any topic that matches the matcher.
+func (m *multiplexer) AddMatch(matcher func(string) bool, handler interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	callback, err := newStructuredCallback(m.logger, m.marshaller, handler)
@@ -57,23 +64,34 @@ func (m *multiplexer) Add(matcher TopicMatcher, handler interface{}) error {
 	return nil
 }
 
-func (m *multiplexer) callback(topic Topic, data map[string]interface{}) {
+// Add another topic matcher and handler to the multiplexer.
+func (m *multiplexer) Unsubscribe() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.unsubscriber != nil {
+		m.unsubscriber()
+		m.unsubscriber = nil
+	}
+}
+
+func (m *multiplexer) callback(topic string, data map[string]interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, element := range m.outputs {
-		if element.matcher.Match(topic) {
+		if element.matcher(topic) {
 			element.callback.handler(topic, data)
 		}
 	}
 }
 
-// Match implements TopicMatcher. If any of the topic matchers added for the
-// handlers match the topic, the multiplexer matches.
-func (m *multiplexer) Match(topic Topic) bool {
+// If any of the topic matchers added for the handlers match the topic, the
+// multiplexer matches.
+func (m *multiplexer) match(topic string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, element := range m.outputs {
-		if element.matcher.Match(topic) {
+		if element.matcher(topic) {
 			return true
 		}
 	}

@@ -6,23 +6,15 @@ package pubsub
 import (
 	"sync"
 
-	"github.com/juju/loggo"
 	"github.com/juju/utils/deque"
 )
-
-// Unsubscriber provides a way to stop receiving handler callbacks.
-// Unsubscribing from a hub will also mark any pending notifications as done,
-// and the handler will not be called for them.
-type Unsubscriber interface {
-	Unsubscribe()
-}
 
 type subscriber struct {
 	id int
 
-	logger       loggo.Logger
-	topicMatcher TopicMatcher
-	handler      func(topic Topic, data interface{})
+	logger       Logger
+	topicMatcher func(topic string) bool
+	handler      func(topic string, data interface{})
 
 	mutex   sync.Mutex
 	pending *deque.Deque
@@ -31,7 +23,7 @@ type subscriber struct {
 	done    chan struct{}
 }
 
-func newSubscriber(matcher TopicMatcher, handler func(Topic, interface{}), logger loggo.Logger) *subscriber {
+func newSubscriber(matcher func(topic string) bool, handler func(string, interface{}), logger Logger) *subscriber {
 	// A closed channel is used to provide an immediate route through a select
 	// call in the loop function.
 	closed := make(chan struct{})

@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"github.com/juju/errors"
-	"github.com/juju/loggo"
 )
 
 // StructuredHub allows the hander functions to accept either structures
@@ -38,9 +37,9 @@ type Marshaller interface {
 
 // StructuredHubConfig is the argument struct for NewStructuredHub.
 type StructuredHubConfig struct {
-	// LogModule allows for overriding the default logging module.
-	// The default value is "pubsub.structured".
-	LogModule string
+	// Logger allows specifying a logging implementation for debug
+	// and trace level messages emitted from the hub.
+	Logger Logger
 
 	// Marshaller defines how the structured hub will convert from structures to
 	// a map[string]interface{} and back. If this is not specified, the
@@ -77,16 +76,16 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 	if config == nil {
 		config = new(StructuredHubConfig)
 	}
-	module := "pubsub.structured"
-	if config.LogModule != "" {
-		module = config.LogModule
+	logger := config.Logger
+	if logger == nil {
+		logger = noOpLogger{}
 	}
 	if config.Marshaller == nil {
 		config.Marshaller = JSONMarshaller
 	}
 	return &StructuredHub{
 		hub: SimpleHub{
-			logger: loggo.GetLogger(module),
+			logger: logger,
 		},
 		marshaller:  config.Marshaller,
 		annotations: config.Annotations,
@@ -110,7 +109,7 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 //
 // The channel return value is closed when all the subscribers have been
 // notified of the event.
-func (h *StructuredHub) Publish(topic Topic, data interface{}) (<-chan struct{}, error) {
+func (h *StructuredHub) Publish(topic string, data interface{}) (<-chan struct{}, error) {
 	if data == nil {
 		data = make(map[string]interface{})
 	}
@@ -155,22 +154,37 @@ func (h *StructuredHub) toStringMap(data interface{}) (map[string]interface{}, e
 	return result, nil
 }
 
-// Subscribe takes a topic matcher, and a handler function. If the matcher
-// matches the published topic, the handler function is called with the
-// published Topic and the associated data.
+// Subscribe takes a topic with a handler function. If the topic is the same
+// as the published topic, the handler function is called with the published
+// topic and the associated data.
 //
-// The handler function will be called with all maching published events until
-// the Unsubscribe method on the Unsubscriber is called.
+// The function return value is a function that will unsubscribe the caller
+// from the hub, for this subscription.
 //
 // The hander function must have the signature:
-//   `func(Topic, map[string]interface{})`
+//   `func(string, map[string]interface{})`
 // or
-//   `func(Topic, SomeStruct, error)`
-// where `SomeStruct` is any structure. The map[string]interface{} from the
+//   `func(string, SomeStruct, error)`
+// where `SomeStruct` is any structure.
+//
+// If the hander function does not match one of these signatures, the Subscribe
+// function returns an error.
+//
+// The map[string]interface{} from the
 // Publish call is unmarshalled into the `SomeStruct` structure. If there is
 // an error unmarshalling the handler is called with a zerod structure and an
 // error with the marshalling error.
-func (h *StructuredHub) Subscribe(matcher TopicMatcher, handler interface{}) (Unsubscriber, error) {
+func (h *StructuredHub) Subscribe(topic string, handler interface{}) (func(), error) {
+	return h.SubscribeMatch(equalTopic(topic), handler)
+}
+
+// SubscribeMatch takes a function that determins whether the topic matches,
+// and a handler function. If the matcher matches the published topic, the
+// handler function is called with the published topic and the associated
+// data.
+//
+// All other aspects of the function are the same as the `Subscribe` method.
+func (h *StructuredHub) SubscribeMatch(matcher func(string) bool, handler interface{}) (func(), error) {
 	if matcher == nil {
 		return nil, errors.NotValidf("missing matcher")
 	}
@@ -178,5 +192,5 @@ func (h *StructuredHub) Subscribe(matcher TopicMatcher, handler interface{}) (Un
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	return h.hub.Subscribe(matcher, callback.handler), nil
+	return h.hub.SubscribeMatch(matcher, callback.handler), nil
 }

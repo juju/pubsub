@@ -7,7 +7,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
@@ -15,9 +14,7 @@ import (
 	"github.com/juju/pubsub"
 )
 
-type StructuredHubSuite struct {
-	testing.LoggingCleanupSuite
-}
+type StructuredHubSuite struct{}
 
 var _ = gc.Suite(&StructuredHubSuite{})
 
@@ -64,42 +61,42 @@ func (*StructuredHubSuite) TestSubscribeHandler(c *gc.C) {
 			err:         "expected 2 or 3 args, got 4, incorrect handler signature not valid",
 		}, {
 			description: "simple hub handler function",
-			handler:     func(pubsub.Topic, interface{}) {},
+			handler:     func(string, interface{}) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad return values in handler function",
-			handler:     func(pubsub.Topic, interface{}, error) error { return nil },
+			handler:     func(string, interface{}, error) error { return nil },
 			err:         "expected no return values, got 1, incorrect handler signature not valid",
 		}, {
 			description: "bad first arg",
-			handler:     func(string, map[string]interface{}, error) {},
-			err:         "first arg should be a pubsub.Topic, incorrect handler signature not valid",
+			handler:     func(int, map[string]interface{}, error) {},
+			err:         "first arg should be a string, incorrect handler signature not valid",
 		}, {
 			description: "bad second arg",
-			handler:     func(pubsub.Topic, string, error) {},
+			handler:     func(string, string, error) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(pubsub.Topic, map[string]interface{}, error) {},
+			handler:     func(string, map[string]interface{}, error) {},
 			err:         "data type of map\\[string\\]interface{} expects only 2 args, got 3, incorrect handler signature not valid",
 		}, {
 			description: "accept map[string]interface{}",
-			handler:     func(pubsub.Topic, map[string]interface{}) {},
+			handler:     func(string, map[string]interface{}) {},
 		}, {
 			description: "bad map[string]string",
-			handler:     func(pubsub.Topic, map[string]string, error) {},
+			handler:     func(string, map[string]string, error) {},
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(pubsub.Topic, Emitter, bool) {},
+			handler:     func(string, Emitter, bool) {},
 			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
 		}, {
 			description: "accept struct value",
-			handler:     func(pubsub.Topic, Emitter, error) {},
+			handler:     func(string, Emitter, error) {},
 		},
 	} {
 		c.Logf("test %d: %s", i, test.description)
-		sub, err := hub.Subscribe(pubsub.MatchAll, test.handler)
+		sub, err := hub.SubscribeMatch(pubsub.MatchAll, test.handler)
 		if test.err == "" {
 			c.Check(err, jc.ErrorIsNil)
 			c.Check(sub, gc.NotNil)
@@ -113,15 +110,15 @@ func (*StructuredHubSuite) TestSubscribeHandler(c *gc.C) {
 func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 	called := false
 	hub := pubsub.NewStructuredHub(nil)
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data map[string]interface{}) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data map[string]interface{}) {
 		c.Check(data, gc.NotNil)
 		c.Check(data, gc.HasLen, 0)
 		called = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer unsub()
 
-	done, err := hub.Publish(topic, nil)
+	done, err := hub.Publish("topic", nil)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -130,7 +127,7 @@ func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 
 func (*StructuredHubSuite) TestBadPublish(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	done, err := hub.Publish(first, "hello")
+	done, err := hub.Publish("topic", "hello")
 	c.Check(done, gc.IsNil)
 	c.Check(err, gc.ErrorMatches, "unmarshalling: json: cannot unmarshal string into Go value of type map\\[string\\]interface {}")
 }
@@ -147,25 +144,25 @@ func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
 		mapCalled     bool
 	)
 	hub := pubsub.NewStructuredHub(nil)
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data JustOrigin, err error) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data JustOrigin, err error) {
 		c.Check(err, jc.ErrorIsNil)
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.Origin, gc.Equals, source.Origin)
 		originCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	sub, err = hub.Subscribe(topic, func(topic pubsub.Topic, data MessageID, err error) {
+	defer unsub()
+	unsub, err = hub.Subscribe("topic", func(topic string, data MessageID, err error) {
 		c.Check(err, jc.ErrorIsNil)
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.Message, gc.Equals, source.Message)
 		c.Check(data.Key, gc.Equals, source.ID)
 		messageCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	sub, err = hub.Subscribe(topic, func(topic pubsub.Topic, data map[string]interface{}) {
-		c.Check(topic, gc.Equals, topic)
+	defer unsub()
+	unsub, err = hub.Subscribe("topic", func(topic string, data map[string]interface{}) {
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data, jc.DeepEquals, map[string]interface{}{
 			"origin":  "test",
 			"message": "hello world",
@@ -174,8 +171,8 @@ func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
 		mapCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	done, err := hub.Publish(topic, source)
+	defer unsub()
+	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -197,25 +194,25 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 		mapCalled     bool
 	)
 	hub := pubsub.NewStructuredHub(nil)
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data JustOrigin, err error) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data JustOrigin, err error) {
 		c.Check(err, jc.ErrorIsNil)
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.Origin, gc.Equals, source["origin"])
 		originCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	sub, err = hub.Subscribe(topic, func(topic pubsub.Topic, data MessageID, err error) {
+	defer unsub()
+	unsub, err = hub.Subscribe("topic", func(topic string, data MessageID, err error) {
 		c.Check(err, jc.ErrorIsNil)
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.Message, gc.Equals, source["message"])
 		c.Check(data.Key, gc.Equals, source["id"])
 		messageCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	sub, err = hub.Subscribe(topic, func(topic pubsub.Topic, data map[string]interface{}) {
-		c.Check(topic, gc.Equals, topic)
+	defer unsub()
+	unsub, err = hub.Subscribe("topic", func(topic string, data map[string]interface{}) {
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data, jc.DeepEquals, map[string]interface{}{
 			"origin":  "test",
 			"message": "hello world",
@@ -224,8 +221,8 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 		mapCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	done, err := hub.Publish(topic, source)
+	defer unsub()
+	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -243,15 +240,15 @@ func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
 	}
 	called := false
 	hub := pubsub.NewStructuredHub(nil)
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data BadID, err error) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data BadID, err error) {
 		c.Check(err.Error(), gc.Equals, "unmarshalling data: json: cannot unmarshal number into Go value of type string")
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.ID, gc.Equals, "")
 		called = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	done, err := hub.Publish(topic, source)
+	defer unsub()
+	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -279,8 +276,8 @@ func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
 		&pubsub.StructuredHubConfig{
 			Marshaller: &yamlMarshaller{},
 		})
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data map[string]interface{}) {
-		c.Check(topic, gc.Equals, topic)
+	unsub, err := hub.Subscribe("topic", func(topic string, data map[string]interface{}) {
+		c.Check(topic, gc.Equals, "topic")
 		c.Check(data, jc.DeepEquals, map[string]interface{}{
 			"origin":  "test",
 			"message": "hello world",
@@ -289,9 +286,9 @@ func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
 		called = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer unsub()
 
-	done, err := hub.Publish(topic, source)
+	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -312,21 +309,21 @@ func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
 				"origin": origin,
 			},
 		})
-	sub, err := hub.Subscribe(topic, func(topic pubsub.Topic, data Emitter, err error) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data Emitter, err error) {
 		c.Check(err, jc.ErrorIsNil)
-		c.Check(topic, gc.Equals, topic)
+		c.Check(topic, gc.Equals, "topic")
 		obtained = append(obtained, data.Origin)
 		c.Check(data.Message, gc.Equals, source.Message)
 		c.Check(data.ID, gc.Equals, source.ID)
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	done, err := hub.Publish(topic, source)
+	defer unsub()
+	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
 	source.Origin = "other"
-	done, err = hub.Publish(topic, source)
+	done, err = hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -347,17 +344,17 @@ func (*StructuredHubSuite) TestPostProcess(c *gc.C) {
 				return in, nil
 			},
 		})
-	unsub, err := hub.Subscribe(topic, func(t pubsub.Topic, data map[string]interface{}) {
+	unsub, err := hub.Subscribe("topic", func(_ string, data map[string]interface{}) {
 		values = append(values, data["counter"].(int))
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	defer unsub.Unsubscribe()
+	defer unsub()
 
-	_, err = hub.Publish(topic, JustOrigin{"origin"})
+	_, err = hub.Publish("topic", JustOrigin{"origin"})
 	c.Assert(err, gc.ErrorMatches, "bad")
-	_, err = hub.Publish(topic, JustOrigin{"origin"})
+	_, err = hub.Publish("topic", JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
-	done, err := hub.Publish(topic, JustOrigin{"origin"})
+	done, err := hub.Publish("topic", JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -370,14 +367,14 @@ type Worker struct {
 	fromMap    []string
 }
 
-func (w *Worker) subMessage(topic pubsub.Topic, data MessageID, err error) {
+func (w *Worker) subMessage(topic string, data MessageID, err error) {
 	w.m.Lock()
 	defer w.m.Unlock()
 
 	w.fromStruct = append(w.fromStruct, data.Message)
 }
 
-func (w *Worker) subData(topic pubsub.Topic, data map[string]interface{}) {
+func (w *Worker) subData(topic string, data map[string]interface{}) {
 	w.m.Lock()
 	defer w.m.Unlock()
 
@@ -388,12 +385,12 @@ func (w *Worker) subData(topic pubsub.Topic, data map[string]interface{}) {
 func (*StructuredHubSuite) TestMultipleSubscribersSingleInstance(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
 	w := &Worker{}
-	sub, err := hub.Subscribe(pubsub.MatchAll, w.subData)
+	unsub, err := hub.SubscribeMatch(pubsub.MatchAll, w.subData)
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
-	sub, err = hub.Subscribe(pubsub.MatchAll, w.subMessage)
+	defer unsub()
+	unsub, err = hub.SubscribeMatch(pubsub.MatchAll, w.subMessage)
 	c.Assert(err, jc.ErrorIsNil)
-	defer sub.Unsubscribe()
+	defer unsub()
 
 	message := "a message"
 	done, err := hub.Publish("foo", MessageID{Message: message})
