@@ -76,9 +76,14 @@ func (m *multiplexer) Unsubscribe() {
 }
 
 func (m *multiplexer) callback(topic string, data map[string]interface{}) {
+	// Since the callback functions have arbitrary code, don't hold the
+	// mutex for the duration of the calls.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, element := range m.outputs {
+	outputs := make([]element, len(m.outputs))
+	copy(outputs, m.outputs)
+	m.mu.Unlock()
+
+	for _, element := range outputs {
 		if element.matcher(topic) {
 			element.callback.handler(topic, data)
 		}
@@ -88,6 +93,8 @@ func (m *multiplexer) callback(topic string, data map[string]interface{}) {
 // If any of the topic matchers added for the handlers match the topic, the
 // multiplexer matches.
 func (m *multiplexer) match(topic string) bool {
+	// Here we explicitly don't make a copy of the outputs as the match
+	// function is going to be called much more often than the callback func.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, element := range m.outputs {

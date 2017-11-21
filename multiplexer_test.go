@@ -158,3 +158,61 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 	c.Check(messageCalled, jc.IsFalse)
 	c.Check(mapCalled, jc.IsTrue)
 }
+
+func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
+	source := Emitter{
+		Origin:  "test",
+		Message: "hello world",
+		ID:      42,
+	}
+	var (
+		topic         = "callback.topic"
+		originCalled  bool
+		messageCalled bool
+		mapCalled     bool
+		nestedPublish <-chan struct{}
+	)
+	hub := pubsub.NewStructuredHub(nil)
+	multi, err := hub.NewMultiplexer()
+	c.Assert(err, jc.ErrorIsNil)
+	defer multi.Unsubscribe()
+
+	err = multi.Add(topic, func(top string, data JustOrigin, err error) {
+		c.Check(err, jc.ErrorIsNil)
+		c.Check(top, gc.Equals, topic)
+		c.Check(data.Origin, gc.Equals, source.Origin)
+		originCalled = true
+
+		nestedPublish, err = hub.Publish(second, MessageID{
+			Message: "new message",
+		})
+	})
+	c.Assert(err, jc.ErrorIsNil)
+	err = multi.Add(second, func(topic string, data MessageID, err error) {
+		c.Check(data.Message, gc.Equals, "new message")
+		messageCalled = true
+	})
+	c.Assert(err, jc.ErrorIsNil)
+	err = multi.AddMatch(pubsub.MatchAll, func(top string, data map[string]interface{}) {
+		if top == second {
+			c.Check(data["message"], gc.Equals, "new message")
+			return
+		}
+		c.Check(top, gc.Equals, topic)
+		c.Check(data, jc.DeepEquals, map[string]interface{}{
+			"origin":  "test",
+			"message": "hello world",
+			"id":      float64(42), // ints are converted to floats through json.
+		})
+		mapCalled = true
+	})
+	c.Assert(err, jc.ErrorIsNil)
+	done, err := hub.Publish(topic, source)
+	c.Assert(err, jc.ErrorIsNil)
+
+	waitForMessageHandlingToBeComplete(c, done)
+	waitForMessageHandlingToBeComplete(c, nestedPublish)
+	c.Check(originCalled, jc.IsTrue)
+	c.Check(messageCalled, jc.IsTrue)
+	c.Check(mapCalled, jc.IsTrue)
+}
