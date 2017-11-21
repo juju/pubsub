@@ -241,7 +241,13 @@ func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
 	called := false
 	hub := pubsub.NewStructuredHub(nil)
 	unsub, err := hub.Subscribe("topic", func(topic string, data BadID, err error) {
-		c.Check(err.Error(), gc.Equals, "unmarshalling data: json: cannot unmarshal number into Go value of type string")
+		// In order to support both Go 1.8 and 1.9, we check the common parts
+		// of the error.
+		// Go 1.9 says:
+		//   "unmarshalling data: json: cannot unmarshal number into Go struct field BadID.id of type string"
+		// Go 1.8 says:
+		//   "unmarshalling data: json: cannot unmarshal number into Go value of type string"
+		c.Check(err, gc.ErrorMatches, "unmarshalling data: json: cannot unmarshal number into Go .* of type string")
 		c.Check(topic, gc.Equals, "topic")
 		c.Check(data.ID, gc.Equals, "")
 		called = true
