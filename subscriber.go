@@ -6,7 +6,7 @@ package pubsub
 import (
 	"sync"
 
-	"github.com/juju/utils/deque"
+	"github.com/juju/collections/deque"
 )
 
 type subscriber struct {
