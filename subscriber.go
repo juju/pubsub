@@ -38,7 +38,7 @@ func newSubscriber(matcher func(topic string) bool, handler func(string, interfa
 		closed:       closed,
 	}
 	go sub.loop()
-	sub.logger.Debugf("created subscriber %p for %v", sub, matcher)
+	sub.logger.Tracef("created subscriber %p for %v", sub, matcher)
 	return sub
 }
 
