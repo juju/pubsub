@@ -69,15 +69,16 @@ func (m *multiplexer) AddMatch(matcher func(string) bool, handler interface{}) e
 // Add another topic matcher and handler to the multiplexer.
 func (m *multiplexer) Unsubscribe() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	unsubscriber := m.unsubscriber
+	m.unsubscriber = nil
+	m.mu.Unlock()
 
 	if multiUnsubscribeTestHook != nil {
 		multiUnsubscribeTestHook()
 	}
 
-	if m.unsubscriber != nil {
-		m.unsubscriber()
-		m.unsubscriber = nil
+	if unsubscriber != nil {
+		unsubscriber()
 	}
 }
 
