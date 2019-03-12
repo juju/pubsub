@@ -5,6 +5,8 @@ package pubsub
 
 import "sync"
 
+var prePublishTestHook func()
+
 // SimpleHubConfig is the argument struct for NewSimpleHub.
 type SimpleHubConfig struct {
 	// Logger allows specifying a logging implementation for debug
@@ -54,6 +56,10 @@ type SimpleHub struct {
 func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
+
+	if prePublishTestHook != nil {
+		prePublishTestHook()
+	}
 
 	done := make(chan struct{})
 	wait := sync.WaitGroup{}
