@@ -4,13 +4,18 @@
 package pubsub_test
 
 import (
+	"time"
+
+	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
 	"github.com/juju/pubsub"
 )
 
-type MultiplexerHubSuite struct{}
+type MultiplexerHubSuite struct {
+	testing.IsolationSuite
+}
 
 var _ = gc.Suite(&MultiplexerHubSuite{})
 
@@ -215,4 +220,67 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
 	c.Check(mapCalled, jc.IsTrue)
+}
+
+func (s *MultiplexerHubSuite) TestUnsubscribeWhileMatch(c *gc.C) {
+	// The race we are trying do deal with is this:
+	// Publish is called, it acquires underlying mutex on hub
+	// Unsubscribe is called, it acquires the mutex on the multiplexer
+	// and awaits the mutex on the hub
+	// Publish proceeds and calls match on the multiplexer which wants
+	// the multiplexer mutex
+	// = deadlock
+
+	publishBlock := make(chan struct{})
+	publishReady := make(chan struct{})
+	unsubBlock := make(chan struct{})
+	unsubReady := make(chan struct{})
+
+	s.PatchValue(pubsub.PrePublishTestHook, func() {
+		close(publishReady)
+		<-publishBlock
+	})
+	s.PatchValue(pubsub.MultiUnsubscribeTestHook, func() {
+		close(unsubReady)
+		<-unsubBlock
+	})
+
+	hub := pubsub.NewStructuredHub(nil)
+	multi, err := hub.NewMultiplexer()
+	c.Assert(err, jc.ErrorIsNil)
+
+	err = multi.Add("a subject", func(string, map[string]interface{}) {})
+	c.Assert(err, jc.ErrorIsNil)
+
+	go func() {
+		hub.Publish("test", map[string]interface{}{})
+	}()
+
+	select {
+	case <-time.After(testing.LongWait):
+		c.Errorf("publish not called")
+	case <-publishReady:
+	}
+
+	unsubscribed := make(chan struct{})
+	go func() {
+		multi.Unsubscribe()
+		close(unsubscribed)
+	}()
+
+	select {
+	case <-time.After(testing.LongWait):
+		c.Errorf("unsubscribe not called")
+	case <-unsubReady:
+	}
+
+	// Now both functions are in the right place, let them continue.
+	close(publishBlock)
+	close(unsubBlock)
+
+	select {
+	case <-time.After(testing.LongWait):
+		c.Errorf("unsubscribe blocked")
+	case <-unsubscribed:
+	}
 }

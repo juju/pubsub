@@ -9,6 +9,8 @@ import (
 	"github.com/juju/errors"
 )
 
+var multiUnsubscribeTestHook func()
+
 // Multiplexer allows multiple subscriptions to be made sharing a single
 // message queue from the hub. This means that all the messages for the
 // various subscriptions are called back in the order that the messages were
@@ -68,6 +70,10 @@ func (m *multiplexer) AddMatch(matcher func(string) bool, handler interface{}) e
 func (m *multiplexer) Unsubscribe() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if multiUnsubscribeTestHook != nil {
+		multiUnsubscribeTestHook()
+	}
 
 	if m.unsubscriber != nil {
 		m.unsubscriber()
