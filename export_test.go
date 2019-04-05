@@ -8,7 +8,12 @@ var (
 	MultiUnsubscribeTestHook = &multiUnsubscribeTestHook
 )
 
-// Exported to test matching.
+// MultiplexerMatch exported to test matching.
 func MultiplexerMatch(m Multiplexer, topic string) bool {
 	return m.(*multiplexer).match(topic)
+}
+
+// SimpleMultiplexerMatch exported to test matching.
+func SimpleMultiplexerMatch(m SimpleMultiplexer, topic string) bool {
+	return m.(*simpleMultiplexer).match(topic)
 }
