@@ -4,6 +4,7 @@
 package pubsub_test
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -118,7 +119,7 @@ func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
 
-	done, err := hub.Publish("topic", nil)
+	done, err := hub.Publish(context.TODO(), "topic", nil)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -127,7 +128,7 @@ func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 
 func (*StructuredHubSuite) TestBadPublish(c *gc.C) {
 	hub := pubsub.NewStructuredHub(nil)
-	done, err := hub.Publish("topic", "hello")
+	done, err := hub.Publish(context.TODO(), "topic", "hello")
 	c.Check(done, gc.IsNil)
 	c.Check(err, gc.ErrorMatches, "unmarshalling: json: cannot unmarshal string into Go value of type map\\[string\\]interface {}")
 }
@@ -172,7 +173,7 @@ func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
-	done, err := hub.Publish("topic", source)
+	done, err := hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -222,7 +223,7 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
-	done, err := hub.Publish("topic", source)
+	done, err := hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -254,7 +255,7 @@ func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
-	done, err := hub.Publish("topic", source)
+	done, err := hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -294,7 +295,7 @@ func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
 
-	done, err := hub.Publish("topic", source)
+	done, err := hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -324,12 +325,12 @@ func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
-	done, err := hub.Publish("topic", source)
+	done, err := hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
 	source.Origin = "other"
-	done, err = hub.Publish("topic", source)
+	done, err = hub.Publish(context.TODO(), "topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -356,11 +357,11 @@ func (*StructuredHubSuite) TestPostProcess(c *gc.C) {
 	c.Assert(err, jc.ErrorIsNil)
 	defer unsub()
 
-	_, err = hub.Publish("topic", JustOrigin{"origin"})
+	_, err = hub.Publish(context.TODO(), "topic", JustOrigin{"origin"})
 	c.Assert(err, gc.ErrorMatches, "bad")
-	_, err = hub.Publish("topic", JustOrigin{"origin"})
+	_, err = hub.Publish(context.TODO(), "topic", JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
-	done, err := hub.Publish("topic", JustOrigin{"origin"})
+	done, err := hub.Publish(context.TODO(), "topic", JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -399,7 +400,7 @@ func (*StructuredHubSuite) TestMultipleSubscribersSingleInstance(c *gc.C) {
 	defer unsub()
 
 	message := "a message"
-	done, err := hub.Publish("foo", MessageID{Message: message})
+	done, err := hub.Publish(context.TODO(), "foo", MessageID{Message: message})
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)

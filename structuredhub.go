@@ -4,6 +4,7 @@
 package pubsub
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 
@@ -109,7 +110,7 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 //
 // The channel return value is closed when all the subscribers have been
 // notified of the event.
-func (h *StructuredHub) Publish(topic string, data interface{}) (<-chan struct{}, error) {
+func (h *StructuredHub) Publish(ctx context.Context, topic string, data interface{}) (<-chan error, error) {
 	if data == nil {
 		data = make(map[string]interface{})
 	}
@@ -129,7 +130,7 @@ func (h *StructuredHub) Publish(topic string, data interface{}) (<-chan struct{}
 		}
 	}
 	h.hub.logger.Tracef("publish %q: %#v", topic, asMap)
-	return h.hub.Publish(topic, asMap), nil
+	return h.hub.Publish(ctx, topic, asMap), nil
 }
 
 func (h *StructuredHub) toStringMap(data interface{}) (map[string]interface{}, error) {

@@ -3,7 +3,10 @@
 
 package pubsub
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 var prePublishTestHook func()
 
@@ -53,7 +56,7 @@ type SimpleHub struct {
 //
 // The channel return value is closed when all the subscribers have been
 // notified of the event.
-func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
+func (h *SimpleHub) Publish(ctx context.Context, topic string, data interface{}) <-chan error {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -61,27 +64,48 @@ func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
 		prePublishTestHook()
 	}
 
-	done := make(chan struct{})
-	wait := sync.WaitGroup{}
+	var wg sync.WaitGroup
+
+	done := make(chan error)
 
 	for _, s := range h.subscribers {
 		if s.topicMatcher(topic) {
-			wait.Add(1)
-			s.notify(
-				&handlerCallback{
-					topic: topic,
-					data:  data,
-					wg:    &wait,
-				})
+			wg.Add(1)
+			s.notify(&handlerCallback{
+				topic: topic,
+				data:  data,
+				wg:    &wg,
+			})
 		}
 	}
 
 	go func() {
-		wait.Wait()
+		// Allow the following waitgroup to unblock after a given set of time.
+		// If the notify never finishes, then this go routine will be around
+		// for a very long time and never close the done channel; leaking the
+		// gorountine.
+		if err := waitWithContext(ctx, &wg); err != nil {
+			done <- err
+			return
+		}
 		close(done)
 	}()
 
 	return done
+}
+
+func waitWithContext(ctx context.Context, wg *sync.WaitGroup) error {
+	ch := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ch:
+		return nil
+	}
 }
 
 // Subscribe to a topic with a handler function. If the topic is the same

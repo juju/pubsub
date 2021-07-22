@@ -4,6 +4,7 @@
 package pubsub_test
 
 import (
+	"context"
 	"time"
 
 	jc "github.com/juju/testing/checkers"
@@ -27,7 +28,7 @@ func (*BenchmarkSuite) BenchmarkStructuredNoConversions(c *gc.C) {
 	defer unsub()
 	failedCount := 0
 	for i := 0; i < c.N; i++ {
-		done, err := hub.Publish(topic, nil)
+		done, err := hub.Publish(context.TODO(), topic, nil)
 		c.Assert(err, jc.ErrorIsNil)
 
 		select {
@@ -57,7 +58,7 @@ func (*BenchmarkSuite) BenchmarkStructuredSerialize(c *gc.C) {
 		ID:      42,
 	}
 	for i := 0; i < c.N; i++ {
-		done, err := hub.Publish(topic, data)
+		done, err := hub.Publish(context.TODO(), topic, data)
 		c.Assert(err, jc.ErrorIsNil)
 
 		select {
