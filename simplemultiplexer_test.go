@@ -4,6 +4,7 @@
 package pubsub_test
 
 import (
+	"context"
 	"time"
 
 	"github.com/juju/testing"
@@ -65,7 +66,7 @@ func (*SimpleMultiplexerSuite) TestCallback(c *gc.C) {
 		c.Fail()
 		messageCalled = true
 	})
-	done := hub.Publish(topic, source)
+	done := hub.Publish(context.TODO(), topic, source)
 
 	waitForMessageHandlingToBeComplete(c, done)
 	c.Check(originCalled, jc.IsTrue)
@@ -78,7 +79,7 @@ func (*SimpleMultiplexerSuite) TestCallbackCanPublish(c *gc.C) {
 		source        = "magic"
 		originCalled  bool
 		messageCalled bool
-		nestedPublish <-chan struct{}
+		nestedPublish <-chan error
 	)
 	hub := pubsub.NewSimpleHub(nil)
 	multi := hub.NewMultiplexer()
@@ -89,13 +90,13 @@ func (*SimpleMultiplexerSuite) TestCallbackCanPublish(c *gc.C) {
 		c.Check(data, gc.Equals, source)
 		originCalled = true
 
-		nestedPublish = hub.Publish(second, "new message")
+		nestedPublish = hub.Publish(context.TODO(), second, "new message")
 	})
 	multi.Add(second, func(topic string, data interface{}) {
 		c.Check(data, gc.Equals, "new message")
 		messageCalled = true
 	})
-	done := hub.Publish(topic, source)
+	done := hub.Publish(context.TODO(), topic, source)
 
 	waitForMessageHandlingToBeComplete(c, done)
 	waitForMessageHandlingToBeComplete(c, nestedPublish)
@@ -132,7 +133,7 @@ func (s *SimpleMultiplexerSuite) TestUnsubscribeWhileMatch(c *gc.C) {
 	multi.Add("a subject", func(string, interface{}) {})
 
 	go func() {
-		hub.Publish("test", "a value")
+		hub.Publish(context.TODO(), "test", "a value")
 	}()
 
 	select {

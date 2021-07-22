@@ -4,6 +4,7 @@
 package pubsub_test
 
 import (
+	"context"
 	"time"
 
 	"github.com/juju/testing"
@@ -155,7 +156,7 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 		mapCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	done, err := hub.Publish(topic, source)
+	done, err := hub.Publish(context.TODO(), topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -175,7 +176,7 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 		originCalled  bool
 		messageCalled bool
 		mapCalled     bool
-		nestedPublish <-chan struct{}
+		nestedPublish <-chan error
 	)
 	hub := pubsub.NewStructuredHub(nil)
 	multi, err := hub.NewMultiplexer()
@@ -188,9 +189,10 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 		c.Check(data.Origin, gc.Equals, source.Origin)
 		originCalled = true
 
-		nestedPublish, err = hub.Publish(second, MessageID{
+		nestedPublish, err = hub.Publish(context.TODO(), second, MessageID{
 			Message: "new message",
 		})
+		c.Check(err, jc.ErrorIsNil)
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	err = multi.Add(second, func(topic string, data MessageID, err error) {
@@ -212,7 +214,7 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 		mapCalled = true
 	})
 	c.Assert(err, jc.ErrorIsNil)
-	done, err := hub.Publish(topic, source)
+	done, err := hub.Publish(context.TODO(), topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
 	waitForMessageHandlingToBeComplete(c, done)
@@ -253,7 +255,7 @@ func (s *MultiplexerHubSuite) TestUnsubscribeWhileMatch(c *gc.C) {
 	c.Assert(err, jc.ErrorIsNil)
 
 	go func() {
-		hub.Publish("test", map[string]interface{}{})
+		hub.Publish(context.TODO(), "test", map[string]interface{}{})
 	}()
 
 	select {
