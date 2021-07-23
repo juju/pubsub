@@ -109,7 +109,7 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 //
 // The channel return value is closed when all the subscribers have been
 // notified of the event.
-func (h *StructuredHub) Publish(topic string, data interface{}) (<-chan struct{}, error) {
+func (h *StructuredHub) Publish(topic string, data interface{}) (func(), error) {
 	if data == nil {
 		data = make(map[string]interface{})
 	}
