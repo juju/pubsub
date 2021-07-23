@@ -44,16 +44,16 @@ type SimpleHub struct {
 	logger      Logger
 }
 
-// Publish will notifiy all the subscribers that are interested by calling
+// Publish will notify all the subscribers that are interested by calling
 // their handler function.
 //
 // The data is passed through to each Subscriber untouched. Note that all
 // subscribers are notified in parallel, and that no modification should be
 // done to the data or data races will occur.
 //
-// The channel return value is closed when all the subscribers have been
-// notified of the event.
-func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
+// The return function when called blocks and waits for all callbacks to be
+// completed.
+func (h *SimpleHub) Publish(topic string, data interface{}) func() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
@@ -61,27 +61,19 @@ func (h *SimpleHub) Publish(topic string, data interface{}) <-chan struct{} {
 		prePublishTestHook()
 	}
 
-	done := make(chan struct{})
-	wait := sync.WaitGroup{}
-
+	var wait sync.WaitGroup
 	for _, s := range h.subscribers {
 		if s.topicMatcher(topic) {
 			wait.Add(1)
-			s.notify(
-				&handlerCallback{
-					topic: topic,
-					data:  data,
-					wg:    &wait,
-				})
+			s.notify(&handlerCallback{
+				topic: topic,
+				data:  data,
+				wg:    &wait,
+			})
 		}
 	}
 
-	go func() {
-		wait.Wait()
-		close(done)
-	}()
-
-	return done
+	return wait.Wait
 }
 
 // Subscribe to a topic with a handler function. If the topic is the same
@@ -128,6 +120,18 @@ func (h *SimpleHub) unsubscribe(id int) {
 			return
 		}
 	}
+}
+
+// Wait takes the returning function from Publish and returns a channel. The
+// channel is closed once the returning function is done.
+func Wait(done func()) <-chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		done()
+		close(ch)
+	}()
+
+	return ch
 }
 
 type handle struct {

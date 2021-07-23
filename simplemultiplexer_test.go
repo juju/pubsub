@@ -10,7 +10,7 @@ import (
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
-	"github.com/juju/pubsub"
+	"github.com/juju/pubsub/v2"
 )
 
 type SimpleMultiplexerSuite struct {
@@ -42,7 +42,7 @@ func (*SimpleMultiplexerSuite) TestMatcher(c *gc.C) {
 }
 
 func (*SimpleMultiplexerSuite) TestCallback(c *gc.C) {
-	source := &Emitter{
+	source := &Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -67,7 +67,7 @@ func (*SimpleMultiplexerSuite) TestCallback(c *gc.C) {
 	})
 	done := hub.Publish(topic, source)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsFalse)
 }
@@ -78,7 +78,7 @@ func (*SimpleMultiplexerSuite) TestCallbackCanPublish(c *gc.C) {
 		source        = "magic"
 		originCalled  bool
 		messageCalled bool
-		nestedPublish <-chan struct{}
+		nestedPublish func()
 	)
 	hub := pubsub.NewSimpleHub(nil)
 	multi := hub.NewMultiplexer()
@@ -97,8 +97,8 @@ func (*SimpleMultiplexerSuite) TestCallbackCanPublish(c *gc.C) {
 	})
 	done := hub.Publish(topic, source)
 
-	waitForMessageHandlingToBeComplete(c, done)
-	waitForMessageHandlingToBeComplete(c, nestedPublish)
+	waitForPublishToComplete(c, done)
+	waitForPublishToComplete(c, nestedPublish)
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
 }

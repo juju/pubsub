@@ -10,7 +10,7 @@ import (
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
-	"github.com/juju/pubsub"
+	"github.com/juju/pubsub/v2"
 )
 
 type MultiplexerHubSuite struct {
@@ -81,11 +81,11 @@ func (*MultiplexerHubSuite) TestMultiplexerAdd(c *gc.C) {
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(string, Emitter, bool) {},
+			handler:     func(string, Emission, bool) {},
 			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
 		}, {
 			description: "accept struct value",
-			handler:     func(string, Emitter, error) {},
+			handler:     func(string, Emission, error) {},
 		},
 	} {
 		c.Logf("test %d: %s", i, test.description)
@@ -117,7 +117,7 @@ func (*MultiplexerHubSuite) TestMatcher(c *gc.C) {
 }
 
 func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -158,14 +158,14 @@ func (*MultiplexerHubSuite) TestCallback(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsFalse)
 	c.Check(mapCalled, jc.IsTrue)
 }
 
 func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -175,7 +175,7 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 		originCalled  bool
 		messageCalled bool
 		mapCalled     bool
-		nestedPublish <-chan struct{}
+		nestedPublish func()
 	)
 	hub := pubsub.NewStructuredHub(nil)
 	multi, err := hub.NewMultiplexer()
@@ -191,6 +191,7 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 		nestedPublish, err = hub.Publish(second, MessageID{
 			Message: "new message",
 		})
+		c.Check(err, jc.ErrorIsNil)
 	})
 	c.Assert(err, jc.ErrorIsNil)
 	err = multi.Add(second, func(topic string, data MessageID, err error) {
@@ -215,8 +216,8 @@ func (*MultiplexerHubSuite) TestCallbackCanPublish(c *gc.C) {
 	done, err := hub.Publish(topic, source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
-	waitForMessageHandlingToBeComplete(c, nestedPublish)
+	waitForPublishToComplete(c, done)
+	waitForPublishToComplete(c, nestedPublish)
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
 	c.Check(mapCalled, jc.IsTrue)

@@ -11,14 +11,14 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
 
-	"github.com/juju/pubsub"
+	"github.com/juju/pubsub/v2"
 )
 
 type StructuredHubSuite struct{}
 
 var _ = gc.Suite(&StructuredHubSuite{})
 
-type Emitter struct {
+type Emission struct {
 	Origin  string `json:"origin"`
 	Message string `json:"message"`
 	ID      int    `json:"id"`
@@ -88,11 +88,11 @@ func (*StructuredHubSuite) TestSubscribeHandler(c *gc.C) {
 			err:         "second arg should be a structure or map\\[string\\]interface{} for data, incorrect handler signature not valid",
 		}, {
 			description: "bad third arg",
-			handler:     func(string, Emitter, bool) {},
+			handler:     func(string, Emission, bool) {},
 			err:         "third arg should be error for deserialization errors, incorrect handler signature not valid",
 		}, {
 			description: "accept struct value",
-			handler:     func(string, Emitter, error) {},
+			handler:     func(string, Emission, error) {},
 		},
 	} {
 		c.Logf("test %d: %s", i, test.description)
@@ -121,7 +121,7 @@ func (*StructuredHubSuite) TestPublishNil(c *gc.C) {
 	done, err := hub.Publish("topic", nil)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(called, jc.IsTrue)
 }
 
@@ -133,7 +133,7 @@ func (*StructuredHubSuite) TestBadPublish(c *gc.C) {
 }
 
 func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -175,7 +175,7 @@ func (*StructuredHubSuite) TestPublishDeserialize(c *gc.C) {
 	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	// Make sure they were all called.
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
@@ -225,7 +225,7 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	// Make sure they were all called.
 	c.Check(originCalled, jc.IsTrue)
 	c.Check(messageCalled, jc.IsTrue)
@@ -233,7 +233,7 @@ func (*StructuredHubSuite) TestPublishMap(c *gc.C) {
 }
 
 func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -257,7 +257,7 @@ func (*StructuredHubSuite) TestPublishDeserializeError(c *gc.C) {
 	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Assert(called, jc.IsTrue)
 }
 
@@ -272,7 +272,7 @@ func (*yamlMarshaller) Unmarshal(data []byte, v interface{}) error {
 }
 
 func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Origin:  "test",
 		Message: "hello world",
 		ID:      42,
@@ -297,13 +297,13 @@ func (*StructuredHubSuite) TestYAMLMarshalling(c *gc.C) {
 	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	// Make sure they were all called.
 	c.Assert(called, jc.IsTrue)
 }
 
 func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
-	source := Emitter{
+	source := Emission{
 		Message: "hello world",
 		ID:      42,
 	}
@@ -315,7 +315,7 @@ func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
 				"origin": origin,
 			},
 		})
-	unsub, err := hub.Subscribe("topic", func(topic string, data Emitter, err error) {
+	unsub, err := hub.Subscribe("topic", func(topic string, data Emission, err error) {
 		c.Check(err, jc.ErrorIsNil)
 		c.Check(topic, gc.Equals, "topic")
 		obtained = append(obtained, data.Origin)
@@ -327,12 +327,12 @@ func (*StructuredHubSuite) TestAnnotations(c *gc.C) {
 	done, err := hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	source.Origin = "other"
 	done, err = hub.Publish("topic", source)
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Assert(obtained, jc.DeepEquals, []string{origin, "other"})
 }
 
@@ -363,7 +363,7 @@ func (*StructuredHubSuite) TestPostProcess(c *gc.C) {
 	done, err := hub.Publish("topic", JustOrigin{"origin"})
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(values, jc.DeepEquals, []int{2, 3})
 }
 
@@ -402,7 +402,7 @@ func (*StructuredHubSuite) TestMultipleSubscribersSingleInstance(c *gc.C) {
 	done, err := hub.Publish("foo", MessageID{Message: message})
 	c.Assert(err, jc.ErrorIsNil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(w.fromMap, jc.DeepEquals, []string{message})
 	c.Check(w.fromStruct, jc.DeepEquals, []string{message})
 }

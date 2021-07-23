@@ -1,6 +1,6 @@
 
 # pubsub
-    import "github.com/juju/pubsub"
+    import "github.com/juju/pubsub/v2"
 
 Package pubsub provides publish and subscribe functionality within a single process.
 

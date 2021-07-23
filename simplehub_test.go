@@ -10,12 +10,16 @@ import (
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
-	"github.com/juju/pubsub"
+	"github.com/juju/pubsub/v2"
 )
 
 type SimpleHubSuite struct{}
 
 var _ = gc.Suite(&SimpleHubSuite{})
+
+func waitForPublishToComplete(c *gc.C, done func()) {
+	waitForMessageHandlingToBeComplete(c, pubsub.Wait(done))
+}
 
 func waitForMessageHandlingToBeComplete(c *gc.C, done <-chan struct{}) {
 	select {
@@ -30,7 +34,7 @@ func waitForMessageHandlingToBeComplete(c *gc.C, done <-chan struct{}) {
 func (*SimpleHubSuite) TestPublishNoSubscribers(c *gc.C) {
 	hub := pubsub.NewSimpleHub(nil)
 	done := hub.Publish("topic", nil)
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 }
 
 func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
@@ -43,7 +47,7 @@ func (*SimpleHubSuite) TestPublishOneSubscriber(c *gc.C) {
 	})
 	done := hub.Publish("topic", nil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Assert(called, jc.IsTrue)
 }
 
@@ -53,7 +57,7 @@ func (*SimpleHubSuite) TestPublishCompleterWaits(c *gc.C) {
 	hub.Subscribe("topic", func(topic string, data interface{}) {
 		<-wait
 	})
-	done := hub.Publish("topic", nil)
+	done := pubsub.Wait(hub.Publish("topic", nil))
 
 	select {
 	case <-done:
@@ -75,7 +79,7 @@ func (*SimpleHubSuite) TestSubscriberExecsInOrder(c *gc.C) {
 	})
 	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall = hub.Publish(fmt.Sprintf("test.%v", i), nil)
+		lastCall = pubsub.Wait(hub.Publish(fmt.Sprintf("test.%v", i), nil))
 	}
 
 	waitForMessageHandlingToBeComplete(c, lastCall)
@@ -90,7 +94,7 @@ func (*SimpleHubSuite) TestPublishNotBlockedByHandlerFunc(c *gc.C) {
 	})
 	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall = hub.Publish("topic", nil)
+		lastCall = pubsub.Wait(hub.Publish("topic", nil))
 	}
 	// release the handlers
 	close(wait)
@@ -112,7 +116,7 @@ func (*SimpleHubSuite) TestUnsubcribeWithPendingHandlersMarksDone(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	var lastCall <-chan struct{}
 	for i := 0; i < 5; i++ {
-		lastCall = hub.Publish("topic", nil)
+		lastCall = pubsub.Wait(hub.Publish("topic", nil))
 	}
 	// release the handlers
 	close(wait)
@@ -147,7 +151,7 @@ func (*SimpleHubSuite) TestUnsubscribe(c *gc.C) {
 	unsub()
 	done := hub.Publish("topic", nil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Assert(called, jc.IsFalse)
 }
 
@@ -163,7 +167,7 @@ func (*SimpleHubSuite) TestSubscriberMultipleCallbacks(c *gc.C) {
 
 	done := hub.Publish("topic", nil)
 
-	waitForMessageHandlingToBeComplete(c, done)
+	waitForPublishToComplete(c, done)
 	c.Check(firstCalled, jc.IsTrue)
 	c.Check(secondCalled, jc.IsTrue)
 	c.Check(thirdCalled, jc.IsTrue)
