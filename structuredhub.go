@@ -107,8 +107,8 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 // Subscribers are notified in parallel, and that no
 // modification should be done to the data or data races will occur.
 //
-// The channel return value is closed when all the subscribers have been
-// notified of the event.
+// The return function when called blocks and waits for all callbacks to be
+// completed.
 func (h *StructuredHub) Publish(topic string, data interface{}) (func(), error) {
 	if data == nil {
 		data = make(map[string]interface{})

@@ -44,15 +44,15 @@ type SimpleHub struct {
 	logger      Logger
 }
 
-// Publish will notifiy all the subscribers that are interested by calling
+// Publish will notify all the subscribers that are interested by calling
 // their handler function.
 //
 // The data is passed through to each Subscriber untouched. Note that all
 // subscribers are notified in parallel, and that no modification should be
 // done to the data or data races will occur.
 //
-// The channel return value is closed when all the subscribers have been
-// notified of the event.
+// The return function when called blocks and waits for all callbacks to be
+// completed.
 func (h *SimpleHub) Publish(topic string, data interface{}) func() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -65,12 +65,11 @@ func (h *SimpleHub) Publish(topic string, data interface{}) func() {
 	for _, s := range h.subscribers {
 		if s.topicMatcher(topic) {
 			wait.Add(1)
-			s.notify(
-				&handlerCallback{
-					topic: topic,
-					data:  data,
-					wg:    &wait,
-				})
+			s.notify(&handlerCallback{
+				topic: topic,
+				data:  data,
+				wg:    &wait,
+			})
 		}
 	}
 
