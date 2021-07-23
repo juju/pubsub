@@ -11,7 +11,7 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
 
-	"github.com/juju/pubsub"
+	"github.com/juju/pubsub/v2"
 )
 
 type StructuredHubSuite struct{}

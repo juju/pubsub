@@ -1,4 +1,4 @@
-module github.com/juju/pubsub
+module github.com/juju/pubsub/v2
 
 go 1.14
 
