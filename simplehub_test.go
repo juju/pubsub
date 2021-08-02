@@ -5,6 +5,7 @@ package pubsub_test
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	jc "github.com/juju/testing/checkers"
@@ -171,4 +172,158 @@ func (*SimpleHubSuite) TestSubscriberMultipleCallbacks(c *gc.C) {
 	c.Check(firstCalled, jc.IsTrue)
 	c.Check(secondCalled, jc.IsTrue)
 	c.Check(thirdCalled, jc.IsTrue)
+}
+
+func (*SimpleHubSuite) TestMetricsPublished(c *gc.C) {
+	metrics := newTestMetrics()
+
+	hub := pubsub.NewSimpleHub(&pubsub.SimpleHubConfig{
+		Metrics: metrics,
+	})
+	done := hub.Publish("topic", nil)
+	waitForPublishToComplete(c, done)
+
+	published, queue, consumed := metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{
+		"topic": 1,
+	})
+	c.Assert(queue, gc.DeepEquals, map[int]int{})
+	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+}
+
+func (*SimpleHubSuite) TestMetricsQueue(c *gc.C) {
+	metrics := newTestMetrics()
+
+	hub := pubsub.NewSimpleHub(&pubsub.SimpleHubConfig{
+		Metrics: metrics,
+	})
+	hub.Subscribe("topic", func(string, interface{}) {})
+
+	published, queue, consumed := metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{})
+	c.Assert(queue, gc.DeepEquals, map[int]int{})
+	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+
+	done := hub.Publish("topic", nil)
+	waitForPublishToComplete(c, done)
+
+	published, queue, consumed = metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{
+		"topic": 1,
+	})
+	c.Assert(queue, gc.DeepEquals, map[int]int{
+		0: 0,
+	})
+	c.Assert(consumed, gc.HasLen, 1)
+}
+
+func (*SimpleHubSuite) TestMetricsDequeue(c *gc.C) {
+	metrics := newTestMetrics()
+
+	var (
+		first = true
+
+		waiting  sync.WaitGroup
+		blocking sync.WaitGroup
+	)
+
+	waiting.Add(1)
+	blocking.Add(1)
+
+	hub := pubsub.NewSimpleHub(&pubsub.SimpleHubConfig{
+		Metrics: metrics,
+	})
+	hub.Subscribe("topic", func(string, interface{}) {
+		if first {
+			waiting.Done()
+			first = false
+		}
+		blocking.Wait()
+	})
+
+	published, queue, consumed := metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{})
+	c.Assert(queue, gc.DeepEquals, map[int]int{})
+	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+
+	hub.Publish("topic", nil)
+	done := hub.Publish("topic", nil)
+
+	waiting.Wait()
+
+	published, queue, consumed = metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{
+		"topic": 2,
+	})
+	c.Assert(queue, gc.DeepEquals, map[int]int{
+		0: 1,
+	})
+	c.Assert(consumed, gc.HasLen, 0)
+
+	blocking.Done()
+	waitForPublishToComplete(c, done)
+
+	published, queue, consumed = metrics.Values()
+	c.Assert(published, gc.DeepEquals, map[string]int{
+		"topic": 2,
+	})
+	c.Assert(queue, gc.DeepEquals, map[int]int{
+		0: 0,
+	})
+	c.Assert(consumed, gc.HasLen, 1)
+}
+
+type testMetrics struct {
+	mutex     sync.Mutex
+	published map[string]int
+	queue     map[int]int
+	consumed  map[int]time.Duration
+}
+
+func newTestMetrics() *testMetrics {
+	return &testMetrics{
+		published: make(map[string]int),
+		queue:     make(map[int]int),
+		consumed:  make(map[int]time.Duration),
+	}
+}
+
+func (m *testMetrics) Published(topic string) {
+	m.mutex.Lock()
+	m.published[topic]++
+	m.mutex.Unlock()
+}
+func (m *testMetrics) Enqueued(index int) {
+	m.mutex.Lock()
+	m.queue[index]++
+	m.mutex.Unlock()
+}
+func (m *testMetrics) Dequeued(index int) {
+	m.mutex.Lock()
+	m.queue[index]--
+	m.mutex.Unlock()
+}
+func (m *testMetrics) Consumed(index int, duration time.Duration) {
+	m.mutex.Lock()
+	m.consumed[index] = duration
+	m.mutex.Unlock()
+}
+
+func (m *testMetrics) Values() (map[string]int, map[int]int, map[int]time.Duration) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	p := make(map[string]int, len(m.published))
+	for k, v := range m.published {
+		p[k] = v
+	}
+	q := make(map[int]int, len(m.queue))
+	for k, v := range m.queue {
+		q[k] = v
+	}
+	c := make(map[int]time.Duration, len(m.consumed))
+	for k, v := range m.consumed {
+		c[k] = v
+	}
+	return p, q, c
 }

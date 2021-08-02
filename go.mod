@@ -3,6 +3,7 @@ module github.com/juju/pubsub/v2
 go 1.14
 
 require (
+	github.com/juju/clock v0.0.0-20190205081909-9c5c9712527c
 	github.com/juju/collections v0.0.0-20180717171555-9be91dc79b7c
 	github.com/juju/errors v0.0.0-20150916125642-1b5e39b83d18
 	github.com/juju/loggo v0.0.0-20170605014607-8232ab8918d9 // indirect

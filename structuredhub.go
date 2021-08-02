@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"reflect"
 
+	"github.com/juju/clock"
 	"github.com/juju/errors"
 )
 
@@ -40,6 +41,12 @@ type StructuredHubConfig struct {
 	// Logger allows specifying a logging implementation for debug
 	// and trace level messages emitted from the hub.
 	Logger Logger
+
+	// Metrics allows the passing in of a metrics collector.
+	Metrics Metrics
+
+	// Clock defines a clock to help improve test coverage.
+	Clock clock.Clock
 
 	// Marshaller defines how the structured hub will convert from structures to
 	// a map[string]interface{} and back. If this is not specified, the
@@ -80,12 +87,22 @@ func NewStructuredHub(config *StructuredHubConfig) *StructuredHub {
 	if logger == nil {
 		logger = noOpLogger{}
 	}
+	metrics := config.Metrics
+	if metrics == nil {
+		metrics = noOpMetrics{}
+	}
+	time := config.Clock
+	if time == nil {
+		time = clock.WallClock
+	}
 	if config.Marshaller == nil {
 		config.Marshaller = JSONMarshaller
 	}
 	return &StructuredHub{
 		hub: SimpleHub{
-			logger: logger,
+			logger:  logger,
+			metrics: metrics,
+			clock:   time,
 		},
 		marshaller:  config.Marshaller,
 		annotations: config.Annotations,
