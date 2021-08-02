@@ -127,7 +127,13 @@ func (h *SimpleHub) SubscribeMatch(matcher func(string) bool, handler func(strin
 	sub.id = h.idx
 	h.idx++
 	h.subscribers = append(h.subscribers, sub)
-	unsub := &handle{hub: h, id: sub.id}
+	unsub := &handle{
+		hub: h,
+		id:  sub.id,
+	}
+
+	h.metrics.Subscribed()
+
 	return unsub.Unsubscribe
 }
 
@@ -139,6 +145,7 @@ func (h *SimpleHub) unsubscribe(id int) {
 		if sub.id == id {
 			sub.close()
 			h.subscribers = append(h.subscribers[0:i], h.subscribers[i+1:]...)
+			h.metrics.Unsubscribed()
 			return
 		}
 	}

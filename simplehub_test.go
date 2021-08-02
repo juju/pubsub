@@ -288,6 +288,9 @@ func newTestMetrics() *testMetrics {
 	}
 }
 
+func (m *testMetrics) Subscribed()   {}
+func (m *testMetrics) Unsubscribed() {}
+
 func (m *testMetrics) Published(topic string) {
 	m.mutex.Lock()
 	m.published[topic]++
