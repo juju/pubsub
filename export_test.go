@@ -6,6 +6,7 @@ package pubsub
 var (
 	PrePublishTestHook       = &prePublishTestHook
 	MultiUnsubscribeTestHook = &multiUnsubscribeTestHook
+	GetFunctionName          = getFunctionName
 )
 
 // MultiplexerMatch exported to test matching.

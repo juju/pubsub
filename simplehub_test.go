@@ -187,8 +187,8 @@ func (*SimpleHubSuite) TestMetricsPublished(c *gc.C) {
 	c.Assert(published, gc.DeepEquals, map[string]int{
 		"topic": 1,
 	})
-	c.Assert(queue, gc.DeepEquals, map[int]int{})
-	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+	c.Assert(queue, gc.DeepEquals, map[string]int{})
+	c.Assert(consumed, gc.DeepEquals, map[string]time.Duration{})
 }
 
 func (*SimpleHubSuite) TestMetricsQueue(c *gc.C) {
@@ -201,8 +201,8 @@ func (*SimpleHubSuite) TestMetricsQueue(c *gc.C) {
 
 	published, queue, consumed := metrics.Values()
 	c.Assert(published, gc.DeepEquals, map[string]int{})
-	c.Assert(queue, gc.DeepEquals, map[int]int{})
-	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+	c.Assert(queue, gc.DeepEquals, map[string]int{})
+	c.Assert(consumed, gc.DeepEquals, map[string]time.Duration{})
 
 	done := hub.Publish("topic", nil)
 	waitForPublishToComplete(c, done)
@@ -211,8 +211,8 @@ func (*SimpleHubSuite) TestMetricsQueue(c *gc.C) {
 	c.Assert(published, gc.DeepEquals, map[string]int{
 		"topic": 1,
 	})
-	c.Assert(queue, gc.DeepEquals, map[int]int{
-		0: 0,
+	c.Assert(queue, gc.DeepEquals, map[string]int{
+		"TestMetricsQueue.func1": 0,
 	})
 	c.Assert(consumed, gc.HasLen, 1)
 }
@@ -243,8 +243,8 @@ func (*SimpleHubSuite) TestMetricsDequeue(c *gc.C) {
 
 	published, queue, consumed := metrics.Values()
 	c.Assert(published, gc.DeepEquals, map[string]int{})
-	c.Assert(queue, gc.DeepEquals, map[int]int{})
-	c.Assert(consumed, gc.DeepEquals, map[int]time.Duration{})
+	c.Assert(queue, gc.DeepEquals, map[string]int{})
+	c.Assert(consumed, gc.DeepEquals, map[string]time.Duration{})
 
 	hub.Publish("topic", nil)
 	done := hub.Publish("topic", nil)
@@ -255,8 +255,8 @@ func (*SimpleHubSuite) TestMetricsDequeue(c *gc.C) {
 	c.Assert(published, gc.DeepEquals, map[string]int{
 		"topic": 2,
 	})
-	c.Assert(queue, gc.DeepEquals, map[int]int{
-		0: 1,
+	c.Assert(queue, gc.DeepEquals, map[string]int{
+		"TestMetricsDequeue.func1": 1,
 	})
 	c.Assert(consumed, gc.HasLen, 0)
 
@@ -267,8 +267,8 @@ func (*SimpleHubSuite) TestMetricsDequeue(c *gc.C) {
 	c.Assert(published, gc.DeepEquals, map[string]int{
 		"topic": 2,
 	})
-	c.Assert(queue, gc.DeepEquals, map[int]int{
-		0: 0,
+	c.Assert(queue, gc.DeepEquals, map[string]int{
+		"TestMetricsDequeue.func1": 0,
 	})
 	c.Assert(consumed, gc.HasLen, 1)
 }
@@ -276,15 +276,15 @@ func (*SimpleHubSuite) TestMetricsDequeue(c *gc.C) {
 type testMetrics struct {
 	mutex     sync.Mutex
 	published map[string]int
-	queue     map[int]int
-	consumed  map[int]time.Duration
+	queue     map[string]int
+	consumed  map[string]time.Duration
 }
 
 func newTestMetrics() *testMetrics {
 	return &testMetrics{
 		published: make(map[string]int),
-		queue:     make(map[int]int),
-		consumed:  make(map[int]time.Duration),
+		queue:     make(map[string]int),
+		consumed:  make(map[string]time.Duration),
 	}
 }
 
@@ -296,23 +296,23 @@ func (m *testMetrics) Published(topic string) {
 	m.published[topic]++
 	m.mutex.Unlock()
 }
-func (m *testMetrics) Enqueued(index int) {
+func (m *testMetrics) Enqueued(ident string) {
 	m.mutex.Lock()
-	m.queue[index]++
+	m.queue[ident]++
 	m.mutex.Unlock()
 }
-func (m *testMetrics) Dequeued(index int) {
+func (m *testMetrics) Dequeued(ident string) {
 	m.mutex.Lock()
-	m.queue[index]--
+	m.queue[ident]--
 	m.mutex.Unlock()
 }
-func (m *testMetrics) Consumed(index int, duration time.Duration) {
+func (m *testMetrics) Consumed(ident string, duration time.Duration) {
 	m.mutex.Lock()
-	m.consumed[index] = duration
+	m.consumed[ident] = duration
 	m.mutex.Unlock()
 }
 
-func (m *testMetrics) Values() (map[string]int, map[int]int, map[int]time.Duration) {
+func (m *testMetrics) Values() (map[string]int, map[string]int, map[string]time.Duration) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -320,11 +320,11 @@ func (m *testMetrics) Values() (map[string]int, map[int]int, map[int]time.Durati
 	for k, v := range m.published {
 		p[k] = v
 	}
-	q := make(map[int]int, len(m.queue))
+	q := make(map[string]int, len(m.queue))
 	for k, v := range m.queue {
 		q[k] = v
 	}
-	c := make(map[int]time.Duration, len(m.consumed))
+	c := make(map[string]time.Duration, len(m.consumed))
 	for k, v := range m.consumed {
 		c[k] = v
 	}

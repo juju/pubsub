@@ -4,6 +4,10 @@
 package pubsub
 
 import (
+	"fmt"
+	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +24,7 @@ type subscriber struct {
 
 	topicMatcher func(topic string) bool
 	handler      func(topic string, data interface{})
+	handlerName  string
 
 	mutex   sync.Mutex
 	pending *deque.Deque
@@ -28,7 +33,8 @@ type subscriber struct {
 	done    chan struct{}
 }
 
-func newSubscriber(matcher func(topic string) bool,
+func newSubscriber(id int,
+	matcher func(topic string) bool,
 	handler func(string, interface{}),
 	logger Logger, metrics Metrics, clock clock.Clock) *subscriber {
 	// A closed channel is used to provide an immediate route through a select
@@ -36,11 +42,13 @@ func newSubscriber(matcher func(topic string) bool,
 	closed := make(chan struct{})
 	close(closed)
 	sub := &subscriber{
+		id:           id,
 		logger:       logger,
 		metrics:      metrics,
 		clock:        clock,
 		topicMatcher: matcher,
 		handler:      handler,
+		handlerName:  getFunctionName(handler, id),
 		pending:      deque.New(),
 		data:         make(chan struct{}, 1),
 		done:         make(chan struct{}),
@@ -61,7 +69,7 @@ func (s *subscriber) close() {
 
 		// Notify the metrics that although we've closed the subscriber, all the
 		// messages that subscriber had, have been drained.
-		s.metrics.Dequeued(s.id)
+		s.metrics.Dequeued(s.handlerName)
 	}
 	close(s.done)
 }
@@ -96,7 +104,7 @@ func (s *subscriber) loop() {
 			// has been on the subscriber pending list. We can use this
 			// information to workout how much backpressure is being exhorted
 			// on the system at large.
-			s.metrics.Consumed(s.id, s.clock.Now().Sub(message.now))
+			s.metrics.Consumed(s.handlerName, s.clock.Now().Sub(message.now))
 		}
 	}
 }
@@ -112,7 +120,7 @@ func (s *subscriber) popOne() (*message, bool) {
 	}
 
 	// Notify the metrics that we've dequeued an message from the list.
-	s.metrics.Dequeued(s.id)
+	s.metrics.Dequeued(s.handlerName)
 
 	empty := s.pending.Len() == 0
 	return val.(*message), empty
@@ -132,10 +140,36 @@ func (s *subscriber) notify(call *handlerCallback) {
 		s.data <- struct{}{}
 	}
 	// Notify the metrics that we're enqueuing a new item onto the subscriber.
-	s.metrics.Enqueued(s.id)
+	s.metrics.Enqueued(s.handlerName)
 }
 
 type message struct {
 	callback *handlerCallback
 	now      time.Time
+}
+
+// getFunctionName attempts to return a stable function name that is comparable.
+// Restarting the program should return the same function name if the method
+// is called on the same function.
+func getFunctionName(i interface{}, fallback int) string {
+	fullpath := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	if len(fullpath) == 0 {
+		return fmt.Sprintf("func-%d", fallback)
+	}
+	parts := strings.Split(fullpath, ".")
+	var name string
+	switch len(parts) {
+	case 0:
+		name = fullpath
+	case 1:
+		name = parts[0]
+	default:
+		name = strings.Join(parts[len(parts)-2:], ".")
+	}
+	// Ensure we remove potential suffixes from the name of the function.
+	idx := strings.LastIndex(name, "-")
+	if idx >= 0 {
+		name = name[:idx]
+	}
+	return name
 }

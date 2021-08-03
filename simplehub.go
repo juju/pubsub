@@ -123,18 +123,12 @@ func (h *SimpleHub) SubscribeMatch(matcher func(string) bool, handler func(strin
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	sub := newSubscriber(matcher, handler, h.logger, h.metrics, h.clock)
-	sub.id = h.idx
+	sub := newSubscriber(h.idx, matcher, handler, h.logger, h.metrics, h.clock)
 	h.idx++
 	h.subscribers = append(h.subscribers, sub)
-	unsub := &handle{
-		hub: h,
-		id:  sub.id,
-	}
-
 	h.metrics.Subscribed()
 
-	return unsub.Unsubscribe
+	return func() { h.unsubscribe(sub.id) }
 }
 
 func (h *SimpleHub) unsubscribe(id int) {
@@ -161,16 +155,6 @@ func Wait(done func()) <-chan struct{} {
 	}()
 
 	return ch
-}
-
-type handle struct {
-	hub *SimpleHub
-	id  int
-}
-
-// Unsubscribe implements Unsubscriber.
-func (h *handle) Unsubscribe() {
-	h.hub.unsubscribe(h.id)
 }
 
 type handlerCallback struct {

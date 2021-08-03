@@ -22,23 +22,23 @@ type Metrics interface {
 	// Enqueued metric increments the number of messages a subscriber has
 	// currently. This can be used to see if a subscriber has a backlog of
 	// messages pilling up.
-	Enqueued(index int)
+	Enqueued(ident string)
 
 	// Dequeued metric decrements the message count once the subscriber has
 	// in the pending queue. This doesn't tell you if the message was consumed
 	// via the callback, or how long it took.
-	Dequeued(index int)
+	Dequeued(ident string)
 
-	// Consumed metric identifies the number of consumed messages the subscriber
+	// Consumed metric increments the number of consumed messages the subscriber
 	// has consumed since a message was enqueued.
-	Consumed(index int, duration time.Duration)
+	Consumed(ident string, duration time.Duration)
 }
 
 type noOpMetrics struct{}
 
-func (noOpMetrics) Subscribed()                                {}
-func (noOpMetrics) Unsubscribed()                              {}
-func (noOpMetrics) Published(topic string)                     {}
-func (noOpMetrics) Enqueued(index int)                         {}
-func (noOpMetrics) Dequeued(index int)                         {}
-func (noOpMetrics) Consumed(index int, duration time.Duration) {}
+func (noOpMetrics) Subscribed()                                   {}
+func (noOpMetrics) Unsubscribed()                                 {}
+func (noOpMetrics) Published(topic string)                        {}
+func (noOpMetrics) Enqueued(ident string)                         {}
+func (noOpMetrics) Dequeued(ident string)                         {}
+func (noOpMetrics) Consumed(ident string, duration time.Duration) {}
