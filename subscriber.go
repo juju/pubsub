@@ -105,6 +105,10 @@ func (s *subscriber) loop() {
 			// information to workout how much backpressure is being exhorted
 			// on the system at large.
 			s.metrics.Consumed(s.handlerName, s.clock.Now().Sub(message.now))
+		} else {
+			// Although it shouldn't happen, we should at least log out when it
+			// does, so we can investigate when it does.
+			s.logger.Errorf("programatic error: message was nil")
 		}
 	}
 }

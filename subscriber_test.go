@@ -28,7 +28,8 @@ func (s SubscriberSuite) TestGetFunctionName(c *gc.C) {
 		name: "com/juju/pubsub/v2_test.method",
 	}}
 
-	for _, test := range tests {
+	for k, test := range tests {
+		c.Logf("test %d", k)
 		name := pubsub.GetFunctionName(test.fn, 0)
 		c.Assert(name, gc.Equals, test.name)
 	}
