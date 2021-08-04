@@ -3,7 +3,11 @@
 
 package pubsub
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/juju/clock"
+)
 
 var prePublishTestHook func()
 
@@ -12,6 +16,21 @@ type SimpleHubConfig struct {
 	// Logger allows specifying a logging implementation for debug
 	// and trace level messages emitted from the hub.
 	Logger Logger
+	// Metrics allows the passing in of a metrics collector.
+	Metrics Metrics
+	// Clock defines a clock to help improve test coverage.
+	Clock clock.Clock
+}
+
+// SimpleHub provides the base functionality of dealing with subscribers,
+// and the notification of subscribers of events.
+type SimpleHub struct {
+	mutex       sync.Mutex
+	subscribers []*subscriber
+	idx         int
+	logger      Logger
+	metrics     Metrics
+	clock       clock.Clock
 }
 
 // NewSimpleHub returns a new SimpleHub instance.
@@ -29,19 +48,20 @@ func NewSimpleHub(config *SimpleHubConfig) *SimpleHub {
 	if logger == nil {
 		logger = noOpLogger{}
 	}
+	metrics := config.Metrics
+	if metrics == nil {
+		metrics = noOpMetrics{}
+	}
+	time := config.Clock
+	if time == nil {
+		time = clock.WallClock
+	}
 
 	return &SimpleHub{
-		logger: logger,
+		logger:  logger,
+		metrics: metrics,
+		clock:   time,
 	}
-}
-
-// SimpleHub provides the base functionality of dealing with subscribers,
-// and the notification of subscribers of events.
-type SimpleHub struct {
-	mutex       sync.Mutex
-	subscribers []*subscriber
-	idx         int
-	logger      Logger
 }
 
 // Publish will notify all the subscribers that are interested by calling
@@ -73,6 +93,8 @@ func (h *SimpleHub) Publish(topic string, data interface{}) func() {
 		}
 	}
 
+	h.metrics.Published(topic)
+
 	return wait.Wait
 }
 
@@ -101,12 +123,12 @@ func (h *SimpleHub) SubscribeMatch(matcher func(string) bool, handler func(strin
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 
-	sub := newSubscriber(matcher, handler, h.logger)
-	sub.id = h.idx
+	sub := newSubscriber(h.idx, matcher, handler, h.logger, h.metrics, h.clock)
 	h.idx++
 	h.subscribers = append(h.subscribers, sub)
-	unsub := &handle{hub: h, id: sub.id}
-	return unsub.Unsubscribe
+	h.metrics.Subscribed()
+
+	return func() { h.unsubscribe(sub.id) }
 }
 
 func (h *SimpleHub) unsubscribe(id int) {
@@ -117,6 +139,7 @@ func (h *SimpleHub) unsubscribe(id int) {
 		if sub.id == id {
 			sub.close()
 			h.subscribers = append(h.subscribers[0:i], h.subscribers[i+1:]...)
+			h.metrics.Unsubscribed()
 			return
 		}
 	}
@@ -132,16 +155,6 @@ func Wait(done func()) <-chan struct{} {
 	}()
 
 	return ch
-}
-
-type handle struct {
-	hub *SimpleHub
-	id  int
-}
-
-// Unsubscribe implements Unsubscriber.
-func (h *handle) Unsubscribe() {
-	h.hub.unsubscribe(h.id)
 }
 
 type handlerCallback struct {
