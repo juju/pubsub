@@ -85,10 +85,10 @@ func (h *SimpleHub) Publish(topic string, data interface{}) func() {
 	for _, s := range h.subscribers {
 		if s.topicMatcher(topic) {
 			wait.Add(1)
-			s.notify(&handlerCallback{
-				topic: topic,
-				data:  data,
-				wg:    &wait,
+			s.notify(handlerCallback{
+				topic:  topic,
+				data:   data,
+				doneFn: wait.Done,
 			})
 		}
 	}
@@ -158,11 +158,11 @@ func Wait(done func()) <-chan struct{} {
 }
 
 type handlerCallback struct {
-	topic string
-	data  interface{}
-	wg    *sync.WaitGroup
+	topic  string
+	data   interface{}
+	doneFn func()
 }
 
 func (h *handlerCallback) done() {
-	h.wg.Done()
+	h.doneFn()
 }
