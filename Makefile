@@ -1,4 +1,4 @@
-PROJECT := github.com/juju/pubsub
+PROJECT := github.com/juju/pubsub/v2
 
 default: check
 
