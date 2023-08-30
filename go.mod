@@ -7,7 +7,7 @@ require (
 	github.com/juju/errors v0.0.0-20220203013757-bd733f3c86b9
 	github.com/juju/testing v0.0.0-20220203020004-a0ff61f03494
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.0
 )
 
 require (
